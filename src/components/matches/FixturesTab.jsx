@@ -3,7 +3,7 @@ import { db, auth } from '@/firebaseConfig'; // 👈 Inject auth instance
 import { collection, onSnapshot, collectionGroup, query, doc, runTransaction, updateDoc, setDoc, where } from 'firebase/firestore';
 import { 
   Calendar, Trophy, ChevronRight, RefreshCw, Play, 
-  CheckCircle, Plus, Minus, Users, X, UserPlus, ShieldAlert 
+  CheckCircle, Plus, Minus, Users, X, UserPlus, ShieldAlert, ChevronDown
 } from 'lucide-react';
 
 export default function FixturesTab() {
@@ -11,7 +11,10 @@ export default function FixturesTab() {
   const [groupedMatches, setGroupedMatches] = useState({});
   const [loading, setLoading] = useState(true);
 
-  // States Skuad Lineup Drawer
+  // 🔽 STATE BARU: Menyimpan data pekan mana saja yang sedang melorot terbuka (Accordion)
+  const [expandedRounds, setExpandedRounds] = useState({});
+
+  // States Skuad Lineup Drawer (Original Lu)
   const [showLineupModal, setShowLineupModal] = useState(false);
   const [activeMatchContext, setActiveMatchContext] = useState(null);
   const [homeLineup, setHomeLineup] = useState([]);
@@ -58,17 +61,66 @@ export default function FixturesTab() {
         // 🔥 CRITICAL FIXED MULTI-USER: Filter matches yang kompetisinya murni milik user aktif
         const filteredMatches = allMatches.filter(m => myCompIds.includes(m.competitionId) && m.status === filter);
         
-        // 🧠 GROUPING LOGIC ENGINE (Original Lu)
+        // 🧠 DEEP DUAL-LAYER GROUPING ENGINE & SMART AUTO FOCUS DETECTOR
         const bundledGroup = {};
+        const autoFocusPayload = { ...expandedRounds };
+
         filteredMatches.forEach(match => {
           const compInfo = compMap[match.competitionId] || { name: 'Unknown Competition', icon: '🏆' };
           const compName = compInfo.name;
+          
           if (!bundledGroup[compName]) {
-            bundledGroup[compName] = { compId: match.competitionId, compIcon: compInfo.icon, matches: [] };
+            bundledGroup[compName] = {
+              compId: match.competitionId,
+              compIcon: compInfo.icon,
+              rounds: {} // 👈 Menggunakan objek pecah per Pekan/Round
+            };
           }
-          bundledGroup[compName].matches.push(match);
+
+          const roundNum = match.round || 1;
+          if (!bundledGroup[compName].rounds[roundNum]) {
+            bundledGroup[compName].rounds[roundNum] = [];
+          }
+          
+          bundledGroup[compName].rounds[roundNum].push(match);
         });
 
+        // 🎯 SMART AUTO-FOCUS SYSTEM: Cari pekan terkecil yang butuh perhatian admin
+        Object.keys(bundledGroup).forEach(compName => {
+          const compData = bundledGroup[compName];
+          const roundNumbers = Object.keys(compData.rounds).map(Number).sort((a, b) => a - b);
+          
+          let focusedRoundFound = false;
+
+          // Cari pekan pertama yang isinya masih pending (upcoming / live)
+          for (let r of roundNumbers) {
+            const hasPendingMatch = compData.rounds[r].some(m => m.status === 'upcoming' || m.status === 'live');
+            const uniqueKey = `${compData.compId}_${r}`;
+
+            if (hasPendingMatch && !focusedRoundFound) {
+              // Jika ini pekan pertama yang pending, buka otomatis!
+              if (autoFocusPayload[uniqueKey] === undefined) {
+                autoFocusPayload[uniqueKey] = true;
+              }
+              focusedRoundFound = true;
+            } else {
+              // Pekan lainnya dibiarkan tertutup rapi
+              if (autoFocusPayload[uniqueKey] === undefined) {
+                autoFocusPayload[uniqueKey] = false;
+              }
+            }
+          }
+
+          // Fallback: Jika semua pertandingan di semua pekan sudah kelar, default buka pekan pertama saja
+          if (!focusedRoundFound && roundNumbers.length > 0) {
+            const uniqueKey = `${compData.compId}_${roundNumbers[0]}`;
+            if (autoFocusPayload[uniqueKey] === undefined) {
+              autoFocusPayload[uniqueKey] = true;
+            }
+          }
+        });
+
+        setExpandedRounds(autoFocusPayload);
         setGroupedMatches(bundledGroup);
         setLoading(false);
       });
@@ -79,6 +131,15 @@ export default function FixturesTab() {
 
     return unsubscribe;
   }, [filter]);
+
+  // 🔄 ACTION TOGGLE ACCORDION PANEL
+  const toggleRoundAccordion = (compId, roundNum) => {
+    const uniqueKey = `${compId}_${roundNum}`;
+    setExpandedRounds(prev => ({
+      ...prev,
+      [uniqueKey]: !prev[uniqueKey]
+    }));
+  };
 
   const handleOpenLineupManager = (compId, match) => {
     setActiveMatchContext({ compId, ...match });
@@ -221,103 +282,145 @@ export default function FixturesTab() {
       {/* MATCH CARD LIST */}
       <div className="flex flex-col gap-6">
         {Object.keys(groupedMatches).length > 0 ? (
-          Object.keys(groupedMatches).map((compName) => (
-            <div key={compName} className="flex flex-col gap-2.5">
-              
-              <div className="flex items-center justify-between bg-gradient-to-r from-[#18181f] to-transparent px-3 py-2 rounded-xl border-l-2 border-neon-purple shadow-sm">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm bg-black/40 w-6 h-6 rounded-md flex items-center justify-center border border-gray-800/50 shadow-inner">
-                    {groupedMatches[compName].compIcon}
-                  </span>
-                  <span className="text-xs font-black text-white tracking-wide uppercase">{compName}</span>
+          Object.keys(groupedMatches).map((compName) => {
+            const compData = groupedMatches[compName];
+            // Ambil semua nomor pekan lalu urutkan dari terkecil ke terbesar
+            const roundNumbers = Object.keys(compData.rounds).map(Number).sort((a, b) => a - b);
+
+            return (
+              <div key={compName} className="flex flex-col gap-3.5">
+                
+                {/* COMPETITION HEADER */}
+                <div className="flex items-center justify-between bg-gradient-to-r from-[#18181f] to-transparent px-3 py-2 rounded-xl border-l-2 border-neon-purple shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm bg-black/40 w-6 h-6 rounded-md flex items-center justify-center border border-gray-800/50 shadow-inner">
+                      {compData.compIcon}
+                    </span>
+                    <span className="text-xs font-black text-white tracking-wide uppercase">{compName}</span>
+                  </div>
+                  <ChevronRight size={14} className="text-gray-600" />
                 </div>
-                <ChevronRight size={14} className="text-gray-600" />
-              </div>
 
-              <div className="flex flex-col gap-3">
-                {groupedMatches[compName].matches.map((match) => (
-                  <div 
-                    key={match.id} 
-                    className={`bg-[#14141a] border rounded-2xl p-4 flex flex-col gap-3.5 shadow-md relative overflow-hidden transition-all duration-300 ${
-                      match.status === 'live' ? 'border-red-500/30 bg-gradient-to-b from-[#1c1214] to-[#14141a]' : 'border-gray-800/70'
-                    }`}
-                  >
-                    {match.status === 'live' && <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-red-500 to-transparent animate-pulse" />}
+                {/* 🔁 RENDER ROUND ACCORDION STACK SEJAJAR */}
+                <div className="flex flex-col gap-2.5">
+                  {roundNumbers.map((roundNum) => {
+                    const uniqueKey = `${compData.compId}_${roundNum}`;
+                    const isExpanded = !!expandedRounds[uniqueKey];
+                    const matchesInRound = compData.rounds[roundNum];
 
-                    <div className="flex justify-between items-center relative z-10">
-                      <div className="flex items-center gap-3 w-28">
-                        <span className="text-base bg-black/40 w-7 h-7 rounded-lg flex items-center justify-center border border-gray-800/60 shadow-inner">{match.homeTeamIcon || '🛡️'}</span>
-                        <span className="text-xs font-black text-white truncate">{match.homeTeamName}</span>
-                      </div>
-
-                      <div className="flex flex-col items-center justify-center flex-1">
-                        {match.status === 'live' || match.status === 'finished' ? (
-                          <div className="flex flex-col items-center gap-1">
-                            <div className="flex items-center gap-3 text-sm font-black text-white bg-black/50 px-3 py-1 rounded-xl border border-gray-800/80 shadow-inner">
-                              <span className={match.status === 'live' ? 'text-neon-volt font-black text-base' : 'text-white'}>{match.homeScore ?? 0}</span>
-                              <span className="text-gray-600 font-normal text-xs">:</span>
-                              <span className={match.status === 'live' ? 'text-neon-volt font-black text-base' : 'text-white'}>{match.awayScore ?? 0}</span>
-                            </div>
+                    return (
+                      <div key={roundNum} className="flex flex-col gap-2 border border-gray-900 bg-black/20 rounded-xl overflow-hidden transition-all">
+                        
+                        {/* 🔽 ACCORDION TRIGGER HEADER */}
+                        <button 
+                          onClick={() => toggleRoundAccordion(compData.compId, roundNum)}
+                          className="w-full flex justify-between items-center bg-[#18181f]/70 hover:bg-[#18181f] px-4 py-3 text-left transition-colors group border-b border-gray-950"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-neon-purple shadow-[0_0_8px_rgba(99,102,241,0.8)]" />
+                            <span className="text-xs font-black text-white uppercase tracking-wider">Pekan {roundNum}</span>
                           </div>
-                        ) : (
-                          <div className="flex items-center gap-1 bg-black/40 border border-gray-800/80 px-2.5 py-1 rounded-lg shadow-inner">
-                            <Calendar size={11} className="text-neon-purple" />
-                            <span className="text-[10px] font-black text-gray-300 tracking-wide">{match.time}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-500 font-bold uppercase tracking-tight">{matchesInRound.length} Matches</span>
+                            <ChevronDown 
+                              size={14} 
+                              className={`text-gray-500 group-hover:text-white transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} 
+                            />
+                          </div>
+                        </button>
+
+                        {/* 📋 ACCORDION INNER CONTENT: CARD MATCHES */}
+                        {isExpanded && (
+                          <div className="p-3 flex flex-col gap-3 animate-fadeIn">
+                            {matchesInRound.map((match) => (
+                              <div 
+                                key={match.id} 
+                                className={`bg-[#14141a] border rounded-2xl p-4 flex flex-col gap-3.5 shadow-md relative overflow-hidden transition-all duration-300 ${
+                                  match.status === 'live' ? 'border-red-500/30 bg-gradient-to-b from-[#1c1214] to-[#14141a]' : 'border-gray-800/70'
+                                }`}
+                              >
+                                {match.status === 'live' && <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-red-500 to-transparent animate-pulse" />}
+
+                                <div className="flex justify-between items-center relative z-10">
+                                  <div className="flex items-center gap-3 w-28">
+                                    <span className="text-base bg-black/40 w-7 h-7 rounded-lg flex items-center justify-center border border-gray-800/60 shadow-inner">{match.homeTeamIcon || '🛡️'}</span>
+                                    <span className="text-xs font-black text-white truncate">{match.homeTeamName}</span>
+                                  </div>
+
+                                  <div className="flex flex-col items-center justify-center flex-1">
+                                    {match.status === 'live' || match.status === 'finished' ? (
+                                      <div className="flex flex-col items-center gap-1">
+                                        <div className="flex items-center gap-3 text-sm font-black text-white bg-black/50 px-3 py-1 rounded-xl border border-gray-800/80 shadow-inner">
+                                          <span className={match.status === 'live' ? 'text-neon-volt font-black text-base' : 'text-white'}>{match.homeScore ?? 0}</span>
+                                          <span className="text-gray-600 font-normal text-xs">:</span>
+                                          <span className={match.status === 'live' ? 'text-neon-volt font-black text-base' : 'text-white'}>{match.awayScore ?? 0}</span>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-1 bg-black/40 border border-gray-800/80 px-2.5 py-1 rounded-lg shadow-inner">
+                                        <Calendar size={11} className="text-neon-purple" />
+                                        <span className="text-[10px] font-black text-gray-300 tracking-wide">{match.time}</span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-3 w-28 justify-end">
+                                    <span className="text-xs font-black text-white truncate text-right">{match.awayTeamName}</span>
+                                    <span className="text-base bg-black/40 w-7 h-7 rounded-lg flex items-center justify-center border border-gray-800/60 shadow-inner">{match.awayTeamIcon || '🛡️'}</span>
+                                  </div>
+                                </div>
+
+                                {/* CONSOLE ACTION BAR CONTROLS */}
+                                <div className="border-t border-gray-900/60 pt-3 flex gap-2 relative z-10">
+                                  {match.status === 'upcoming' && (
+                                    <div className="grid grid-cols-3 gap-2 w-full">
+                                      <button onClick={() => handleOpenLineupManager(compData.compId, match)} className="bg-[#1b1b22] border border-gray-800 text-gray-400 hover:text-white py-2 rounded-xl flex items-center justify-center gap-1.5 text-[10px] font-bold"><Users size={12} /> Lineup</button>
+                                      <button onClick={() => handleStartLive(compData.compId, match.id)} className="col-span-2 text-center text-[10px] font-black bg-gradient-to-r from-neon-purple to-indigo-600 text-white py-2 rounded-xl flex items-center justify-center gap-1.5 uppercase tracking-wider"><Play size={10} /> Kick Off (LIVE)</button>
+                                    </div>
+                                  )}
+
+                                  {match.status === 'live' && (
+                                    <div className="flex flex-col gap-2.5 w-full">
+                                      <div className="grid grid-cols-2 gap-3 text-center">
+                                        <div className="flex items-center justify-between bg-black/40 p-1 px-2 rounded-xl border border-gray-800/50">
+                                          <button onClick={() => handleUpdateLiveScore(compData.compId, match.id, 'homeScore', 'sub')} className="p-1.5 bg-zinc-800 rounded-lg text-gray-400 hover:text-white"><Minus size={10} /></button>
+                                          <span className="text-[9px] font-black text-gray-500 uppercase">GOAL</span>
+                                          <button onClick={() => handleUpdateLiveScore(compData.compId, match.id, 'homeScore', 'add')} className="p-1.5 bg-neon-purple/20 border border-neon-purple/20 rounded-lg text-neon-purple"><Plus size={10} /></button>
+                                        </div>
+                                        <div className="flex items-center justify-between bg-black/40 p-1 px-2 rounded-xl border border-gray-800/50">
+                                          <button onClick={() => handleUpdateLiveScore(compData.compId, match.id, 'awayScore', 'sub')} className="p-1.5 bg-zinc-800 rounded-lg text-gray-400 hover:text-white"><Minus size={10} /></button>
+                                          <span className="text-[9px] font-black text-gray-500 uppercase">GOAL</span>
+                                          <button onClick={() => handleUpdateLiveScore(compData.compId, match.id, 'awayScore', 'add')} className="p-1.5 bg-neon-purple/20 border border-neon-purple/20 rounded-lg text-neon-purple"><Plus size={10} /></button>
+                                        </div>
+                                      </div>
+                                      <div className="grid grid-cols-3 gap-2 w-full">
+                                        <button onClick={() => handleOpenLineupManager(compData.compId, match)} className="bg-[#1b1b22] border border-gray-800 text-gray-400 py-2 rounded-xl flex items-center justify-center gap-1 text-[10px] font-bold"><Users size={12} /> Lineup</button>
+                                        <button onClick={() => handleFinishMatch(compData.compId, match)} className="col-span-2 text-center text-[10px] font-black bg-gradient-to-r from-red-600 to-orange-600 text-white py-2 rounded-xl flex items-center justify-center gap-1.5 uppercase tracking-wider"><CheckCircle size={11} /> Finish Match</button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {match.status === 'finished' && (
+                                    <div className="flex justify-between items-center w-full px-1">
+                                      <button onClick={() => handleOpenLineupManager(compData.compId, match)} className="text-[10px] font-black text-gray-500 hover:text-white flex items-center gap-1 border border-gray-800 bg-black/20 px-2.5 py-1 rounded-lg"><Users size={11} /> View Lineup</button>
+                                      <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">🛡️ Locked</span>
+                                    </div>
+                                  )}
+                                </div>
+
+                              </div>
+                            ))}
                           </div>
                         )}
-                        <span className="text-[8px] text-gray-500 mt-1 uppercase font-black tracking-widest">Pekan {match.round}</span>
+
                       </div>
+                    );
+                  })}
+                </div>
 
-                      <div className="flex items-center gap-3 w-28 justify-end">
-                        <span className="text-xs font-black text-white truncate text-right">{match.awayTeamName}</span>
-                        <span className="text-base bg-black/40 w-7 h-7 rounded-lg flex items-center justify-center border border-gray-800/60 shadow-inner">{match.awayTeamIcon || '🛡️'}</span>
-                      </div>
-                    </div>
-
-                    {/* DYNAMIC CONSOLE ACTION BAR */}
-                    <div className="border-t border-gray-900/60 pt-3 flex gap-2 relative z-10">
-                      {match.status === 'upcoming' && (
-                        <div className="grid grid-cols-3 gap-2 w-full">
-                          <button onClick={() => handleOpenLineupManager(groupedMatches[compName].compId, match)} className="bg-[#1b1b22] border border-gray-800 text-gray-400 hover:text-white py-2 rounded-xl flex items-center justify-center gap-1.5 text-[10px] font-bold"><Users size={12} /> Lineup</button>
-                          <button onClick={() => handleStartLive(groupedMatches[compName].compId, match.id)} className="col-span-2 text-center text-[10px] font-black bg-gradient-to-r from-neon-purple to-indigo-600 text-white py-2 rounded-xl flex items-center justify-center gap-1.5 uppercase tracking-wider"><Play size={10} /> Kick Off (LIVE)</button>
-                        </div>
-                      )}
-
-                      {match.status === 'live' && (
-                        <div className="flex flex-col gap-2.5 w-full">
-                          <div className="grid grid-cols-2 gap-3 text-center">
-                            <div className="flex items-center justify-between bg-black/40 p-1 px-2 rounded-xl border border-gray-800/50">
-                              <button onClick={() => handleUpdateLiveScore(groupedMatches[compName].compId, match.id, 'homeScore', 'sub')} className="p-1.5 bg-zinc-800 rounded-lg text-gray-400 hover:text-white"><Minus size={10} /></button>
-                              <span className="text-[9px] font-black text-gray-500 uppercase">GOAL</span>
-                              <button onClick={() => handleUpdateLiveScore(groupedMatches[compName].compId, match.id, 'homeScore', 'add')} className="p-1.5 bg-neon-purple/20 border border-neon-purple/20 rounded-lg text-neon-purple"><Plus size={10} /></button>
-                            </div>
-                            <div className="flex items-center justify-between bg-black/40 p-1 px-2 rounded-xl border border-gray-800/50">
-                              <button onClick={() => handleUpdateLiveScore(groupedMatches[compName].compId, match.id, 'awayScore', 'sub')} className="p-1.5 bg-zinc-800 rounded-lg text-gray-400 hover:text-white"><Minus size={10} /></button>
-                              <span className="text-[9px] font-black text-gray-500 uppercase">GOAL</span>
-                              <button onClick={() => handleUpdateLiveScore(groupedMatches[compName].compId, match.id, 'awayScore', 'add')} className="p-1.5 bg-neon-purple/20 border border-neon-purple/20 rounded-lg text-neon-purple"><Plus size={10} /></button>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-3 gap-2 w-full">
-                            <button onClick={() => handleOpenLineupManager(groupedMatches[compName].compId, match)} className="bg-[#1b1b22] border border-gray-800 text-gray-400 py-2 rounded-xl flex items-center justify-center gap-1 text-[10px] font-bold"><Users size={12} /> Lineup</button>
-                            <button onClick={() => handleFinishMatch(groupedMatches[compName].compId, match)} className="col-span-2 text-center text-[10px] font-black bg-gradient-to-r from-red-600 to-orange-600 text-white py-2 rounded-xl flex items-center justify-center gap-1.5 uppercase tracking-wider"><CheckCircle size={11} /> Finish Match</button>
-                          </div>
-                        </div>
-                      )}
-
-                      {match.status === 'finished' && (
-                        <div className="flex justify-between items-center w-full px-1">
-                          <button onClick={() => handleOpenLineupManager(groupedMatches[compName].compId, match)} className="text-[10px] font-black text-gray-500 hover:text-white flex items-center gap-1 border border-gray-800 bg-black/20 px-2.5 py-1 rounded-lg"><Users size={11} /> View Lineup</button>
-                          <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">🛡️ Locked</span>
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
-                ))}
               </div>
-
-            </div>
-          ))
+            );
+          })
         ) : (
           <div className="text-center py-16 bg-[#14141a] border border-gray-800/60 rounded-2xl px-4">
             <span className="text-2xl block mb-2">📡</span>
@@ -326,7 +429,7 @@ export default function FixturesTab() {
         )}
       </div>
 
-      {/* LINEUP MODAL DRAWER */}
+      {/* LINEUP MODAL DRAWER (Original Lu) */}
       {showLineupModal && activeMatchContext && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 p-4 flex flex-col justify-end animate-fadeIn">
           <div className="bg-[#18181f]/95 border border-gray-800 rounded-t-3xl max-h-[85vh] flex flex-col p-4 w-full relative shadow-2xl">
