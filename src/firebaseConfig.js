@@ -5,12 +5,12 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
 // 2. Deklarasikan VARIABEL CONFIG
 const firebaseConfig = {
-  apiKey: "AIzaSyCKvBVFiopsLoi90AdjnlQfVmS_v9vjLIA",
-  authDomain: "coaching-tracker-1c930.firebaseapp.com",
-  projectId: "coaching-tracker-1c930",
-  storageBucket: "coaching-tracker-1c930.firebasestorage.app",
-  messagingSenderId: "338337580688",
-  appId: "1:338337580688:web:a980258bc15cb4072f3a15"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 // 3. INISIALISASI aplikasi Firebase
