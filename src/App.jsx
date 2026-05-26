@@ -7,14 +7,25 @@ import Dashboard from './pages/Dashboard';
 import CreateCompetition from './pages/CreateCompetition';
 import MatchCenter from './pages/MatchCenter';
 import Profile from './pages/Profile';
+import PublicViewer from './pages/public/PublicViewer'; // 🆕 Import file wrapper publik baru kita nanti
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [user, setUser] = useState(null); // 👈 State User
   const [initializing, setInitializing] = useState(true); // 👈 State Loading Awal
+  
+  // 🔽 STATE BARU: Untuk menyimpan ID kompetisi yang dibagikan lewat URL
+  const [shareId, setShareId] = useState(null);
 
-  // 🛰️ Real-time Auth Listener
+  // 🛰️ Real-time Auth & URL Interceptor Listener
   useEffect(() => {
+    // 🔗 Cek apakah ada parameter "?share=ID_KOMPETISI" di URL browser
+    const params = new URLSearchParams(window.location.search);
+    const compIdFromUrl = params.get('share');
+    if (compIdFromUrl) {
+      setShareId(compIdFromUrl);
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setInitializing(false);
@@ -31,7 +42,20 @@ function App() {
     );
   }
 
-  // 🛡️ Jika tidak ada user, paksa masuk ke LoginPage
+  // 👁️ MODE PENONTON PUBLIK: Jika membuka lewat share link, bypass login dan kunci layout tanpa bottom nav
+  if (shareId) {
+    return (
+      <div className="min-h-screen bg-black flex justify-center items-center overflow-x-hidden p-2">
+        <div className="w-full max-w-md min-h-screen bg-dark-bg relative flex flex-col shadow-2xl border-x border-gray-950 overflow-hidden rounded-3xl">
+          <main className="flex-1 overflow-y-auto text-white">
+            <PublicViewer compId={shareId} onBackToAdmin={() => setShareId(null)} />
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  // 🛡️ MODE ADMIN HUB: Jika tidak ada share link dan tidak ada user login, paksa masuk ke LoginPage
   if (!user) return <LoginPage />;
 
   const renderPage = () => {
@@ -57,6 +81,8 @@ function App() {
         <main className="flex-1 overflow-y-auto pb-24 text-white">
           {renderPage()}
         </main>
+        
+        {/* FIXED BOTTOM NAVIGATION BAR ADMIN (Hanya dirender pada mode Admin internal) */}
         <nav className="fixed bottom-0 w-full max-w-md bg-[#121212]/80 backdrop-blur-xl border-t border-gray-800/80 px-6 py-3 flex justify-between items-center z-50 shadow-2xl">
           {navItems.map((item) => {
             const IconComponent = item.icon;

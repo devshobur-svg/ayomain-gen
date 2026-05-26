@@ -3,7 +3,8 @@ import { db, auth } from '@/firebaseConfig'; // 👈 Mengamankan auth instance t
 import { collection, onSnapshot, doc, updateDoc, deleteDoc, writeBatch, getDocs, query, where } from 'firebase/firestore'; // 👈 Inject query & where untuk isolasi data
 import { 
   Trophy, Calendar, Users, Settings, PlusCircle, 
-  Trash2, Edit3, X, Save, RefreshCw, Grid, Shield, Activity, ArrowRight, BarChart3
+  Trash2, Edit3, X, Save, RefreshCw, Grid, Shield, Activity, ArrowRight, BarChart3,
+  Share2 // 🆕 Tambah ikon share untuk generator link publik
 } from 'lucide-react';
 
 export default function Dashboard({ setActiveTab }) {
@@ -131,6 +132,21 @@ export default function Dashboard({ setActiveTab }) {
       const event = new CustomEvent('switchToStandings');
       window.dispatchEvent(event);
     }, 50);
+  };
+
+  // 🔗 LOGIC BARU: Generator Share Link Pintar Terintegrasi Otomatis Clipboard
+  const handleShareLeague = (compId, compName) => {
+    const baseProductionUrl = window.location.origin; // Otomatis mendeteksi localhost atau vercel url
+    const generatedShareLink = `${baseProductionUrl}/?share=${compId}`;
+    
+    navigator.clipboard.writeText(generatedShareLink)
+      .then(() => {
+        alert(`🔗 BERHASIL DISALIN!\n\nLink Publik untuk liga "${compName.toUpperCase()}" siap disebar ke WhatsApp Grup komunitas, Coach!`);
+      })
+      .catch((err) => {
+        console.error("Gagal menyalin link: ", err);
+        alert("Waduh, gagal menyalin link otomatis bro. Silakan coba lagi.");
+      });
   };
 
   if (loading) {
@@ -332,7 +348,16 @@ export default function Dashboard({ setActiveTab }) {
                             <p className="text-[9px] text-gray-500 font-bold tracking-tighter mt-0.5">Format: {comp.format} • <span className="text-neon-purple font-black">{comp.teamCount || 0} Teams</span></p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1">
+                        
+                        {/* 🕹️ ROW ACTION AREA: Ditambahkan tombol Share Link Premium */}
+                        <div className="flex items-center gap-1.5 relative z-20">
+                          <button 
+                            onClick={() => handleShareLeague(comp.id, comp.name)} 
+                            className="p-1.5 text-gray-500 hover:text-neon-volt transition-colors"
+                            title="Salin Link Publik Penonton"
+                          >
+                            <Share2 size={13} />
+                          </button>
                           <button onClick={() => { setEditingCompId(comp.id); setEditCompName(comp.name); setEditCompIcon(comp.icon || '🏆'); }} className="p-1.5 text-gray-500 hover:text-neon-purple transition-colors"><Edit3 size={12} /></button>
                           <button onClick={() => handleDeleteLeague(comp.id)} className="p-1.5 text-gray-500 hover:text-red-500 transition-colors"><Trash2 size={12} /></button>
                         </div>
