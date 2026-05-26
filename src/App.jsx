@@ -60,11 +60,12 @@ function App() {
 
   const renderPage = () => {
     switch (activeTab) {
-      case 'dashboard': return <Dashboard setActiveTab={setActiveTab} />;
+      // 🔥 CRITICAL INJECTION: Sekarang objek data 'user' dialirkan masuk sebagai props ke Dashboard
+      case 'dashboard': return <Dashboard setActiveTab={setActiveTab} user={user} />;
       case 'create': return <CreateCompetition />;
       case 'match-center': return <MatchCenter />;
       case 'profile': return <Profile />;
-      default: return <Dashboard setActiveTab={setActiveTab} />;
+      default: return <Dashboard setActiveTab={setActiveTab} user={user} />;
     }
   };
 

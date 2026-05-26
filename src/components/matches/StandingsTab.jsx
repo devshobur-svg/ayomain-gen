@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { db, auth } from '@/firebaseConfig';
-import { collection, onSnapshot, query, orderBy, where, collectionGroup } from 'firebase/firestore';
-import { RefreshCw, ChevronDown, BarChart3, ListOrdered } from 'lucide-react';
+import { collection, onSnapshot, query, orderBy, where } from 'firebase/firestore';
+import { RefreshCw, ChevronDown, BarChart3, ListOrdered, Trophy, Skull } from 'lucide-react';
 
 export default function StandingsTab() {
   const [competitions, setCompetitions] = useState([]);
@@ -9,6 +9,9 @@ export default function StandingsTab() {
   const [teams, setTeams] = useState([]);
   const [loadingLeagues, setLoadingLeagues] = useState(true);
   const [loadingTeams, setLoadingTeams] = useState(false);
+
+  // 🔽 STATE BARU: Melacak apakah kompetisi yang dipilih sudah rampung semua laganya
+  const [isLeagueCompleted, setIsLeagueCompleted] = useState(false);
 
   // 📊 TOGGLE SUB-TAB MIKRO KLASEMEN: 'standard' atau 'analytics'
   const [standingsMode, setStandingsMode] = useState('standard');
@@ -54,9 +57,11 @@ export default function StandingsTab() {
       // Ambil data pertandingan untuk mengekstrak GF, GA, dan Form Tren
       const matchesRef = collection(db, 'competitions', selectedCompId, 'matches');
       onSnapshot(matchesRef, (matchesSnapshot) => {
-        const finishedMatches = matchesSnapshot.docs
-          .map(doc => doc.data())
-          .filter(m => m.status === 'finished');
+        const allMatches = matchesSnapshot.docs.map(doc => doc.data());
+        const finishedMatches = allMatches.filter(m => m.status === 'finished');
+
+        // 🔥 CEK AUTOMATIC CEREMONY TRANSITION: Seluruh pertandingan berstatus finished
+        setIsLeagueCompleted(allMatches.length > 0 && finishedMatches.length === allMatches.length);
 
         // 🧠 DEEP ADVANCED STATS ENGINE: Hitung GF, GA, dan Form per Tim
         const enhancedTeams = teamsData.map(team => {
@@ -129,6 +134,11 @@ export default function StandingsTab() {
   }, [selectedCompId]);
 
   const currentComp = competitions.find(c => c.id === selectedCompId);
+  const totalTeams = teams.length;
+
+  // Helper boundary detector zona merah & emas
+  const isPodium = (idx) => idx < 3;
+  const isRelegation = (idx) => totalTeams >= 5 ? idx >= totalTeams - 3 : idx === totalTeams - 1 && totalTeams > 1;
 
   if (loadingLeagues) {
     return (
@@ -164,6 +174,32 @@ export default function StandingsTab() {
                 <ChevronDown size={12} className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🏆 INTERACTIVE CEREMONY WIDGET FOR ADMIN CONTROL PANEL */}
+      {isLeagueCompleted && totalTeams > 0 && (
+        <div className="bg-gradient-to-br from-[#1a1230] to-[#14141a] border border-neon-purple/40 p-4 rounded-2xl shadow-xl animate-fadeIn">
+          <div className="flex items-center gap-2 mb-3">
+            <Trophy size={15} className="text-neon-volt animate-bounce" />
+            <h4 className="text-xs font-black uppercase tracking-wider text-white">Operator Final Review Ceremony</h4>
+          </div>
+          
+          <div className="flex flex-col gap-2">
+            {/* Tampilkan Ringkasan Juara 1 */}
+            <div className="bg-neon-volt/5 border border-neon-volt/20 p-2.5 rounded-xl flex items-center justify-between">
+              <span className="text-[9px] font-black text-neon-volt tracking-wider uppercase">OFFICIAL CHAMPION (RANK 1)</span>
+              <span className="text-xs font-black text-white uppercase">{teams[0]?.icon} {teams[0]?.name}</span>
+            </div>
+            
+            {/* Tampilkan Ringkasan Zona Merah Juru Kunci */}
+            {totalTeams >= 4 && (
+              <div className="bg-red-950/10 border border-red-900/20 p-2.5 rounded-xl flex items-center justify-between">
+                <span className="text-[9px] font-black text-red-400 tracking-wider uppercase">⚠️ RELEGATION JURU KUNCI</span>
+                <span className="text-xs font-black text-red-500 uppercase">{teams[totalTeams - 1]?.icon} {teams[totalTeams - 1]?.name}</span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -238,57 +274,67 @@ export default function StandingsTab() {
               )}
 
               <tbody className="divide-y divide-gray-800/40">
-                {teams.map((team, index) => (
-                  <tr key={team.id} className="hover:bg-white/[0.01] transition-colors duration-150">
-                    <td className="py-3.5 px-3 text-center text-xs font-black text-gray-500">{index + 1}</td>
-                    <td className="py-3.5 px-2 flex items-center gap-2.5">
-                      <span className="text-xs bg-black/40 w-6 h-6 rounded-md flex items-center justify-center border border-gray-800/60 shadow-inner">{team.icon}</span>
-                      <span className="text-xs font-bold text-white truncate max-w-[100px]">{team.name}</span>
-                    </td>
+                {teams.map((team, index) => {
+                  const topZone = isPodium(index);
+                  const redZone = isRelegation(index);
 
-                    {/* RENDER DATA BERDASARKAN MODE SELEKTOR */}
-                    {standingsMode === 'standard' ? (
-                      <>
-                        <td className="py-3.5 px-1.5 text-center text-xs text-gray-400">{team.stats?.gamesPlayed ?? 0}</td>
-                        <td className="py-3.5 px-1.5 text-center text-xs text-gray-400">{team.stats?.wins ?? 0}</td>
-                        <td className="py-3.5 px-1.5 text-center text-xs text-gray-400">{team.stats?.draws ?? 0}</td>
-                        <td className="py-3.5 px-1.5 text-center text-xs text-gray-400">{team.stats?.losses ?? 0}</td>
-                        <td className="py-3.5 px-2 text-center text-xs font-semibold text-gray-400">{team.stats?.goalDifference ?? 0}</td>
-                        <td className="py-3.5 px-3 text-center text-xs font-black text-white bg-white/[0.01]">{team.stats?.points ?? 0}</td>
-                      </>
-                    ) : (
-                      <>
-                        {/* Advanced Columns */}
-                        <td className="py-3.5 px-2 text-center text-xs text-emerald-400 font-medium">{team.analytics?.gf ?? 0}</td>
-                        <td className="py-3.5 px-2 text-center text-xs text-red-400 font-medium">{team.analytics?.ga ?? 0}</td>
-                        <td className="py-3.5 px-2 text-center text-xs font-semibold text-gray-400">{team.stats?.goalDifference ?? 0}</td>
-                        
-                        {/* 🟢 TREN BULATAN FORM PERFORMA */}
-                        <td className="py-3.5 px-4">
-                          <div className="flex gap-1 justify-center items-center">
-                            {team.analytics?.form && team.analytics.form.length > 0 ? (
-                              team.analytics.form.map((res, hIdx) => (
-                                <span 
-                                  key={hIdx}
-                                  className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black tracking-tighter text-white shadow-sm ${
-                                    res === 'W' ? 'bg-emerald-600 shadow-emerald-900/40' : 
-                                    res === 'L' ? 'bg-red-600 shadow-red-900/40' : 
-                                    'bg-zinc-600'
-                                  }`}
-                                  title={res === 'W' ? 'Win' : res === 'L' ? 'Loss' : 'Draw'}
-                                >
-                                  {res}
-                                </span>
-                              ))
-                            ) : (
-                              <span className="text-[9px] text-gray-600 font-bold uppercase tracking-wider">No Match Data</span>
-                            )}
-                          </div>
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                ))}
+                  return (
+                    <tr key={team.id} className="hover:bg-white/[0.01] transition-colors duration-150">
+                      {/* 🎨 COLOR BOUNDARY DECORATOR PADA NOMOR URUT */}
+                      <td className={`py-3.5 px-3 text-center text-xs font-black relative ${
+                        topZone ? 'text-neon-volt border-l-2 border-neon-volt' : 
+                        redZone ? 'text-red-500 border-l-2 border-red-500' : 'text-gray-500'
+                      }`}>
+                        {index + 1}
+                      </td>
+                      <td className="py-3.5 px-2 flex items-center gap-2.5">
+                        <span className="text-xs bg-black/40 w-6 h-6 rounded-md flex items-center justify-center border border-gray-800/60 shadow-inner">{team.icon}</span>
+                        <span className="text-xs font-bold text-white truncate max-w-[100px]">{team.name}</span>
+                      </td>
+
+                      {/* RENDER DATA BERDASARKAN MODE SELEKTOR */}
+                      {standingsMode === 'standard' ? (
+                        <>
+                          <td className="py-3.5 px-1.5 text-center text-xs text-gray-400">{team.stats?.gamesPlayed ?? 0}</td>
+                          <td className="py-3.5 px-1.5 text-center text-xs text-gray-400">{team.stats?.wins ?? 0}</td>
+                          <td className="py-3.5 px-1.5 text-center text-xs text-gray-400">{team.stats?.draws ?? 0}</td>
+                          <td className="py-3.5 px-1.5 text-center text-xs text-gray-400">{team.stats?.losses ?? 0}</td>
+                          <td className="py-3.5 px-2 text-center text-xs font-semibold text-gray-400">{team.stats?.goalDifference ?? 0}</td>
+                          <td className={`py-3.5 px-3 text-center text-xs font-black bg-white/[0.01] ${topZone ? 'text-neon-volt' : redZone ? 'text-red-400' : 'text-white'}`}>{team.stats?.points ?? 0}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="py-3.5 px-2 text-center text-xs text-emerald-400 font-medium">{team.analytics?.gf ?? 0}</td>
+                          <td className="py-3.5 px-2 text-center text-xs text-red-400 font-medium">{team.analytics?.ga ?? 0}</td>
+                          <td className="py-3.5 px-2 text-center text-xs font-semibold text-gray-400">{team.stats?.goalDifference ?? 0}</td>
+                          
+                          {/* 🟢 TREN BULATAN FORM PERFORMA */}
+                          <td className="py-3.5 px-4">
+                            <div className="flex gap-1 justify-center items-center">
+                              {team.analytics?.form && team.analytics.form.length > 0 ? (
+                                team.analytics.form.map((res, hIdx) => (
+                                  <span 
+                                    key={hIdx}
+                                    className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black tracking-tighter text-white shadow-sm ${
+                                      res === 'W' ? 'bg-emerald-600 shadow-emerald-900/40' : 
+                                      res === 'L' ? 'bg-red-600 shadow-red-900/40' : 
+                                      'bg-zinc-600'
+                                    }`}
+                                    title={res === 'W' ? 'Win' : res === 'L' ? 'Loss' : 'Draw'}
+                                  >
+                                    {res}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-[9px] text-gray-600 font-bold uppercase tracking-wider">No Match Data</span>
+                              )}
+                            </div>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

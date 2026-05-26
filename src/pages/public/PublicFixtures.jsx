@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
 import { db } from '@/firebaseConfig';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
-import { Calendar, Users, X, ChevronDown, ListOrdered, BarChart3, RefreshCw } from 'lucide-react';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { Calendar, Users, X, ChevronDown, ListOrdered, BarChart3, RefreshCw, Trophy, Skull, AlertTriangle } from 'lucide-react';
 
 export default function PublicFixtures({ compId, currentMode }) {
   // Data Storage States
   const [matchesByRound, setMatchesByRound] = useState({});
   const [standingsTeams, setStandingsTeams] = useState([]);
   const [expandedRounds, setExpandedRounds] = useState({});
-  const [standingsSubMode, setStandingsSubMode] = useState('standard'); // standard / analytics
+  const [standingsSubMode, setStandingsSubMode] = useState('standard');
   const [loading, setLoading] = useState(true);
+  
+  // State untuk melacak status akhir liga
+  const [isLeagueCompleted, setIsLeagueCompleted] = useState(false);
 
   // Lineup Drawer View States
   const [showLineupModal, setShowLineupModal] = useState(false);
@@ -21,12 +24,16 @@ export default function PublicFixtures({ compId, currentMode }) {
     if (!compId) return;
     setLoading(true);
 
-    // 1. Ambil data Matches untuk Jadwal & Kalkulasi Live Analytics Klasemen
     const matchesRef = collection(db, 'competitions', compId, 'matches');
     const unsubscribeMatches = onSnapshot(matchesRef, (matchSnap) => {
       const matchesList = matchSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      // 🧠 1A. LOGIC ACCORDION & SMART AUTO FOCUS (Kloningan Presisi Fixtures Lu)
+      // 1. Cek otomatis apakah seluruh pertandingan sudah selesai dimainkan
+      const totalMatches = matchesList.length;
+      const finishedCount = matchesList.filter(m => m.status === 'finished').length;
+      setIsLeagueCompleted(totalMatches > 0 && finishedCount === totalMatches);
+
+      // 2. Grouping & Auto-Focus Pekan
       const grouped = {};
       const autoFocusPayload = { ...expandedRounds };
 
@@ -58,13 +65,12 @@ export default function PublicFixtures({ compId, currentMode }) {
       setExpandedRounds(autoFocusPayload);
       setMatchesByRound(grouped);
 
-      // 2. Ambil data Teams untuk menyusun urutan klasemen
+      // 3. Ambil data Teams untuk Klasemen Analitik
       const teamsRef = collection(db, 'competitions', compId, 'teams');
       onSnapshot(teamsRef, (teamsSnap) => {
         const teamsList = teamsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         const finishedMatches = matchesList.filter(m => m.status === 'finished');
 
-        // 🧠 1B. ADVANCED ANALYTICS MATRIX FOR PUBLIC VIEWER (GF, GA, 5 Last Form)
         const enhancedTeams = teamsList.map(team => {
           let gf = 0, ga = 0;
           const formTrend = [];
@@ -93,7 +99,6 @@ export default function PublicFixtures({ compId, currentMode }) {
           };
         });
 
-        // Sorting standar Poin & Goal Difference
         const sorted = enhancedTeams.sort((a, b) => {
           if ((b.stats?.points ?? 0) !== (a.stats?.points ?? 0)) return (b.stats?.points ?? 0) - (a.stats?.points ?? 0);
           return (b.stats?.goalDifference ?? 0) - (a.stats?.goalDifference ?? 0);
@@ -124,6 +129,11 @@ export default function PublicFixtures({ compId, currentMode }) {
     });
   };
 
+  // Helper untuk menentukan batas baris klasemen dinamis
+  const totalTeams = standingsTeams.length;
+  const isPodium = (idx) => idx < 3;
+  const isRelegation = (idx) => totalTeams >= 5 ? idx >= totalTeams - 3 : idx === totalTeams - 1 && totalTeams > 1;
+
   if (loading) {
     return (
       <div className="flex justify-center items-center py-20 text-xs text-gray-500 gap-2">
@@ -137,7 +147,7 @@ export default function PublicFixtures({ compId, currentMode }) {
 
   return (
     <>
-      {/* 🟢 RENDER 1: TAB JADWAL FIXTURES COMPONENT */}
+      {/* 🟢 TAB 1: FIXTURES */}
       {currentMode === 'fixtures' && (
         <div className="flex flex-col gap-3">
           {roundNumbers.length > 0 ? (
@@ -210,83 +220,162 @@ export default function PublicFixtures({ compId, currentMode }) {
         </div>
       )}
 
-      {/* 🟡 RENDER 2: TAB LEAGUE STANDINGS TABLE COMPONENT */}
+      {/* 🟡 TAB 2: STANDINGS (LEAGUE TABLE) */}
       {currentMode === 'standings' && (
-        <div className="bg-[#14141a] border border-gray-800 rounded-2xl overflow-hidden shadow-lg">
-          <div className="flex border-b border-gray-800/60 p-2 bg-black/20 gap-1.5">
-            <button onClick={() => setStandingsSubMode('standard')} className={`px-3 py-1.5 rounded-lg text-[9px] uppercase font-black tracking-wider flex items-center gap-1 ${standingsSubMode === 'standard' ? 'bg-neon-purple/10 border border-neon-purple/20 text-neon-purple' : 'text-gray-500'}`}><ListOrdered size={11} /> Standard</button>
-            <button onClick={() => setStandingsSubMode('analytics')} className={`px-3 py-1.5 rounded-lg text-[9px] uppercase font-black tracking-wider flex items-center gap-1 ${standingsSubMode === 'analytics' ? 'bg-neon-volt/10 border border-neon-volt/20 text-neon-volt' : 'text-gray-500'}`}><BarChart3 size={11} /> Analytics</button>
-          </div>
+        <div className="flex flex-col gap-4 animate-fadeIn">
+          
+          {/* 🏆 INTERACTIVE CEREMONY WIDGET (ONLY APPEARS WHEN COMPLETED) */}
+          {isLeagueCompleted && totalTeams > 0 && (
+            <div className="bg-gradient-to-br from-[#1c1435] via-[#121216] to-[#1c0d0f] border-2 border-neon-purple/40 rounded-2xl p-4 shadow-[0_0_20px_rgba(139,92,246,0.15)] relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
+                <Trophy size={140} className="text-neon-purple" />
+              </div>
 
-          <div className="w-full overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-gray-800 text-[9px] font-bold text-gray-500 uppercase bg-black/10 tracking-wider">
-                  <th className="py-3 px-3 text-center w-8">#</th>
-                  <th className="py-3 px-2">Team</th>
-                  {standingsSubMode === 'standard' ? (
-                    <>
-                      <th className="py-3 px-1 text-center w-7">P</th>
-                      <th className="py-3 px-1 text-center w-7">W</th>
-                      <th className="py-3 px-1 text-center w-7">D</th>
-                      <th className="py-3 px-1 text-center w-7">L</th>
-                      <th className="py-3 px-1.5 text-center w-8">GD</th>
-                      <th className="py-3 px-3 text-center w-8 font-black text-white bg-white/5">Pts</th>
-                    </>
-                  ) : (
-                    <>
-                      <th className="py-3 px-1 text-center w-8 text-emerald-400">GF</th>
-                      <th className="py-3 px-1 text-center w-8 text-red-400">GA</th>
-                      <th className="py-3 px-1 text-center w-8">GD</th>
-                      <th className="py-3 px-3 text-center w-28">5 Form</th>
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800/30">
-                {standingsTeams.map((team, idx) => (
-                  <tr key={team.id} className="hover:bg-white/[0.01]">
-                    <td className="py-3 px-3 text-center text-xs font-black text-gray-500">{idx + 1}</td>
-                    <td className="py-3 px-2 flex items-center gap-2 truncate max-w-[110px]">
-                      <span className="text-xs bg-black/40 w-5 h-5 rounded flex items-center justify-center border border-gray-800/60 shadow-inner">{team.icon}</span>
-                      <span className="text-xs font-bold text-white truncate uppercase">{team.name}</span>
-                    </td>
+              <h3 className="text-xs font-black text-center text-neon-volt tracking-widest uppercase mb-3 flex items-center justify-center gap-1.5">
+                👑 FINAL TOURNAMENT REPORT 👑
+              </h3>
+
+              {/* PODIUM JUARA (1, 2, 3) */}
+              <div className="flex flex-col gap-2 mb-4">
+                <span className="text-[8px] font-black tracking-wider text-gray-500 uppercase">🏆 PODIUM FINALISTS</span>
+                
+                {standingsTeams.slice(0, 3).map((team, rank) => (
+                  <div key={team.id} className={`flex items-center justify-between p-2.5 rounded-xl border ${
+                    rank === 0 ? 'bg-neon-volt/10 border-neon-volt/40 shadow-[inner_0_0_10px_rgba(221,254,54,0.05)]' :
+                    rank === 1 ? 'bg-zinc-800/40 border-gray-600/40' : 'bg-[#1b1512] border-amber-700/30'
+                  }`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs font-black w-5 h-5 rounded-md flex items-center justify-center ${
+                        rank === 0 ? 'bg-neon-volt text-black' : rank === 1 ? 'bg-gray-400 text-black' : 'bg-amber-700 text-white'
+                      }`}>
+                        {rank + 1}
+                      </span>
+                      <span className="text-sm">{team.icon}</span>
+                      <span className="text-xs font-black uppercase text-white truncate max-w-[140px]">{team.name}</span>
+                    </div>
+                    <span className="text-[10px] font-black px-2 py-0.5 bg-black/40 border border-gray-800 rounded-md text-gray-300">
+                      {team.stats?.points ?? 0} Pts
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* ZONA MERAH (BOTTOM 3 DEGRADASI) */}
+              {totalTeams >= 4 && (
+                <div className="border-t border-gray-800/80 pt-3">
+                  <span className="text-[8px] font-black tracking-wider text-red-500 uppercase flex items-center gap-1 mb-2">
+                    <Skull size={10} /> DANGER ZONA MERAH RELEGATION
+                  </span>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {standingsTeams.slice(-3).map((team, idx) => {
+                      // Ambil posisi aslinya di klasemen
+                      const originalRank = totalTeams - (2 - idx);
+                      if (originalRank <= 3) return null; // Proteksi agar tidak numpang tindih dengan podium
+                      return (
+                        <div key={team.id} className="flex items-center justify-between bg-red-950/20 border border-red-900/30 p-2 rounded-xl">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-[10px] font-black text-red-500 w-4 text-center">#{originalRank}</span>
+                            <span className="text-xs">{team.icon}</span>
+                            <span className="text-xs font-bold text-gray-300 uppercase truncate max-w-[150px]">{team.name}</span>
+                          </div>
+                          <span className="text-[9px] font-black text-red-400/80 uppercase tracking-widest">ZONA MERAH</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TABLE MATRIX */}
+          <div className="bg-[#14141a] border border-gray-800 rounded-2xl overflow-hidden shadow-lg">
+            <div className="flex border-b border-gray-800/60 p-2 bg-black/20 gap-1.5">
+              <button onClick={() => setStandingsSubMode('standard')} className={`px-3 py-1.5 rounded-lg text-[9px] uppercase font-black tracking-wider flex items-center gap-1 ${standingsSubMode === 'standard' ? 'bg-neon-purple/10 border border-neon-purple/20 text-neon-purple' : 'text-gray-500'}`}><ListOrdered size={11} /> Standard</button>
+              <button onClick={() => setStandingsSubMode('analytics')} className={`px-3 py-1.5 rounded-lg text-[9px] uppercase font-black tracking-wider flex items-center gap-1 ${standingsSubMode === 'analytics' ? 'bg-neon-volt/10 border border-neon-volt/20 text-neon-volt' : 'text-gray-500'}`}><BarChart3 size={11} /> Analytics</button>
+            </div>
+
+            <div className="w-full overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-800 text-[9px] font-bold text-gray-500 uppercase bg-black/10 tracking-wider">
+                    <th className="py-3 px-3 text-center w-8">#</th>
+                    <th className="py-3 px-2">Team</th>
                     {standingsSubMode === 'standard' ? (
                       <>
-                        <td className="py-3 px-1 text-center text-xs text-gray-400">{team.stats?.gamesPlayed ?? 0}</td>
-                        <td className="py-3 px-1 text-center text-xs text-gray-400">{team.stats?.wins ?? 0}</td>
-                        <td className="py-3 px-1 text-center text-xs text-gray-400">{team.stats?.draws ?? 0}</td>
-                        <td className="py-3 px-1 text-center text-xs text-gray-400">{team.stats?.losses ?? 0}</td>
-                        <td className="py-3 px-1.5 text-center text-xs text-gray-400">{team.stats?.goalDifference ?? 0}</td>
-                        <td className="py-3 px-3 text-center text-xs font-black text-white bg-white/5">{team.stats?.points ?? 0}</td>
+                        <th className="py-3 px-1 text-center w-7">P</th>
+                        <th className="py-3 px-1 text-center w-7">W</th>
+                        <th className="py-3 px-1 text-center w-7">D</th>
+                        <th className="py-3 px-1 text-center w-7">L</th>
+                        <th className="py-3 px-1.5 text-center w-8">GD</th>
+                        <th className="py-3 px-3 text-center w-8 font-black text-white bg-white/5">Pts</th>
                       </>
                     ) : (
                       <>
-                        <td className="py-3 px-1 text-center text-xs text-emerald-400">{team.analytics?.gf ?? 0}</td>
-                        <td className="py-3 px-1 text-center text-xs text-red-400">{team.analytics?.ga ?? 0}</td>
-                        <td className="py-3 px-1 text-center text-xs text-gray-400">{team.stats?.goalDifference ?? 0}</td>
-                        <td className="py-3 px-3">
-                          <div className="flex gap-1 justify-center items-center">
-                            {team.analytics?.form && team.analytics.form.length > 0 ? (
-                              team.analytics.form.map((res, fIdx) => (
-                                <span key={fIdx} className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[7px] font-black text-white ${res === 'W' ? 'bg-emerald-600' : res === 'L' ? 'bg-red-600' : 'bg-zinc-600'}`}>{res}</span>
-                              ))
-                            ) : (
-                              <span className="text-[7px] text-gray-600 font-bold uppercase tracking-wider">No Data</span>
-                            )}
-                          </div>
-                        </td>
+                        <th className="py-3 px-1 text-center w-8 text-emerald-400">GF</th>
+                        <th className="py-3 px-1 text-center w-8 text-red-400">GA</th>
+                        <th className="py-3 px-1 text-center w-8">GD</th>
+                        <th className="py-3 px-3 text-center w-28">5 Form</th>
                       </>
                     )}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-800/30">
+                  {standingsTeams.map((team, idx) => {
+                    const topZone = isPodium(idx);
+                    const redZone = isRelegation(idx);
+
+                    return (
+                      <tr key={team.id} className="hover:bg-white/[0.01]">
+                        {/* WARNA INDIKATOR VERTIKAL KIRI */}
+                        <td className={`py-3 px-3 text-center text-xs font-black relative ${
+                          topZone ? 'text-neon-volt border-l-2 border-neon-volt' : 
+                          redZone ? 'text-red-500 border-l-2 border-red-500' : 'text-gray-500'
+                        }`}>
+                          {idx + 1}
+                        </td>
+                        <td className="py-3 px-2 flex items-center gap-2 truncate max-w-[110px]">
+                          <span className="text-xs bg-black/40 w-5 h-5 rounded flex items-center justify-center border border-gray-800/60 shadow-inner">{team.icon}</span>
+                          <span className="text-xs font-bold text-white truncate uppercase">{team.name}</span>
+                        </td>
+                        {standingsSubMode === 'standard' ? (
+                          <>
+                            <td className="py-3 px-1 text-center text-xs text-gray-400">{team.stats?.gamesPlayed ?? 0}</td>
+                            <td className="py-3 px-1 text-center text-xs text-gray-400">{team.stats?.wins ?? 0}</td>
+                            <td className="py-3 px-1 text-center text-xs text-gray-400">{team.stats?.draws ?? 0}</td>
+                            <td className="py-3 px-1 text-center text-xs text-gray-400">{team.stats?.losses ?? 0}</td>
+                            <td className="py-3 px-1.5 text-center text-xs text-gray-400">{team.stats?.goalDifference ?? 0}</td>
+                            <td className={`py-3 px-3 text-center text-xs font-black bg-white/5 ${topZone ? 'text-neon-volt' : redZone ? 'text-red-400' : 'text-white'}`}>{team.stats?.points ?? 0}</td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="py-3 px-1 text-center text-xs text-emerald-400">{team.analytics?.gf ?? 0}</td>
+                            <td className="py-3 px-1 text-center text-xs text-red-400">{team.analytics?.ga ?? 0}</td>
+                            <td className="py-3 px-1 text-center text-xs text-gray-400">{team.stats?.goalDifference ?? 0}</td>
+                            <td className="py-3 px-3">
+                              <div className="flex gap-1 justify-center items-center">
+                                {team.analytics?.form && team.analytics.form.length > 0 ? (
+                                  team.analytics.form.map((res, fIdx) => (
+                                    <span key={fIdx} className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[7px] font-black text-white ${res === 'W' ? 'bg-emerald-600' : res === 'L' ? 'bg-red-600' : 'bg-zinc-600'}`}>{res}</span>
+                                  ))
+                                ) : (
+                                  <span className="text-[7px] text-gray-600 font-bold uppercase tracking-wider">No Data</span>
+                                )}
+                              </div>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
-      {/* READ-ONLY SKUAD LINEUP DRAWER MODAL */}
+      {/* READ-ONLY DRAWER MODAL SKUAD */}
       {showLineupModal && activeMatch && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 p-4 flex flex-col justify-end animate-fadeIn">
           <div className="bg-[#18181f]/95 border border-gray-800 rounded-t-3xl max-h-[70vh] flex flex-col p-4 w-full relative shadow-2xl">

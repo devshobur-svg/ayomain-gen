@@ -1,4 +1,4 @@
-import { Plus, Trash2, Loader2, Info, Grid, X } from 'lucide-react';
+import { Plus, Trash2, Loader2, Grid, X } from 'lucide-react';
 import { useState } from 'react';
 import { db, auth } from '@/firebaseConfig'; // 👈 Mengamankan core instance auth terpusat
 import { collection, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
@@ -35,11 +35,10 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
     setTeams(teams.filter((_, i) => i !== index));
   };
 
-  // 🧠 ROUND ROBIN ENGINE: Menghitung jadwal tanding silang otomatis (Original Lu)
+  // 🧠 ENGINE LIGA 1: Menghitung jadwal tanding silang otomatis (Original Lu)
   const generateRoundRobinFixtures = (teamsList) => {
     let list = [...teamsList];
     
-    // Jika jumlah tim ganjil, tambahkan dummy team "BYE" (istirahat)
     if (list.length % 2 !== 0) {
       list.push({ name: 'BYE', icon: '💤', isBye: true });
     }
@@ -54,7 +53,6 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
         const home = list[i];
         const away = list[numTeams - 1 - i];
 
-        // Jangan generate pertandingan jika salah satunya adalah tim istirahat (BYE)
         if (!home.isBye && !away.isBye) {
           fixtures.push({
             round: round + 1,
@@ -65,12 +63,88 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
             homeScore: null,
             awayScore: null,
             status: 'upcoming',
-            time: '16:00' // Waktu default kickoff simulasi
+            time: '16:00'
           });
         }
       }
-      // Rotasi list posisi tim (simpan elemen pertama, putar sisanya)
       list.splice(1, 0, list.pop());
+    }
+    return fixtures;
+  };
+
+  // 🧠 ENGINE PIALA 2: Pembuat bagan pohon biner otomatis untuk Sistem Gugur (Knockout Matrix)
+  const generateKnockoutFixtures = (teamsList) => {
+    const numTeams = teamsList.length;
+    const fixtures = [];
+
+    if (numTeams === 4) {
+      // 🏆 FORMAT PRESET 4 TIM: Langsung Babak Semifinal
+      fixtures.push({
+        matchId: 'M1',
+        round: 1, // Kita simpan nomor urut round agar sinkron dengan layout pekanan lu
+        stage: 'semifinal',
+        homeTeamName: teamsList[0].name, homeTeamIcon: teamsList[0].icon,
+        awayTeamName: teamsList[1].name, awayTeamIcon: teamsList[1].icon,
+        homeScore: null, awayScore: null, homePenaltyScore: null, awayPenaltyScore: null,
+        status: 'upcoming', time: '16:00', nextMatchId: 'M3', nextMatchSide: 'home'
+      });
+      fixtures.push({
+        matchId: 'M2',
+        round: 1,
+        stage: 'semifinal',
+        homeTeamName: teamsList[2].name, homeTeamIcon: teamsList[2].icon,
+        awayTeamName: teamsList[3].name, awayTeamIcon: teamsList[3].icon,
+        homeScore: null, awayScore: null, homePenaltyScore: null, awayPenaltyScore: null,
+        status: 'upcoming', time: '18:00', nextMatchId: 'M3', nextMatchSide: 'away'
+      });
+      // Slot Kosong Grand Final Menunggu Pemenang
+      fixtures.push({
+        matchId: 'M3',
+        round: 2,
+        stage: 'final',
+        homeTeamName: 'Pemenang Semifinal 1', homeTeamIcon: '🕒',
+        awayTeamName: 'Pemenang Semifinal 2', awayTeamIcon: '🕒',
+        homeScore: null, awayScore: null, homePenaltyScore: null, awayPenaltyScore: null,
+        status: 'upcoming', time: '20:00', nextMatchId: null, nextMatchSide: null
+      });
+    } else if (numTeams === 8) {
+      // 🏆 FORMAT PRESET 8 TIM: Mulai Babak Perempat Final (Quarterfinal)
+      for (let i = 0; i < 4; i++) {
+        const nextMId = i < 2 ? 'M5' : 'M6';
+        const nextMSide = i % 2 === 0 ? 'home' : 'away';
+        fixtures.push({
+          matchId: `M${i + 1}`,
+          round: 1,
+          stage: 'quarterfinal',
+          homeTeamName: teamsList[i * 2].name, homeTeamIcon: teamsList[i * 2].icon,
+          awayTeamName: teamsList[i * 2 + 1].name, awayTeamIcon: teamsList[i * 2 + 1].icon,
+          homeScore: null, awayScore: null, homePenaltyScore: null, awayPenaltyScore: null,
+          status: 'upcoming', time: '14:00', nextMatchId: nextMId, nextMatchSide: nextMSide
+        });
+      }
+      // Slot Kosong Semifinal
+      fixtures.push({
+        matchId: 'M5', round: 2, stage: 'semifinal',
+        homeTeamName: 'Pemenang QF 1', homeTeamIcon: '🕒',
+        awayTeamName: 'Pemenang QF 2', awayTeamIcon: '🕒',
+        homeScore: null, awayScore: null, homePenaltyScore: null, awayPenaltyScore: null,
+        status: 'upcoming', time: '17:00', nextMatchId: 'M7', nextMatchSide: 'home'
+      });
+      fixtures.push({
+        matchId: 'M6', round: 2, stage: 'semifinal',
+        homeTeamName: 'Pemenang QF 3', homeTeamIcon: '🕒',
+        awayTeamName: 'Pemenang QF 4', awayTeamIcon: '🕒',
+        homeScore: null, awayScore: null, homePenaltyScore: null, awayPenaltyScore: null,
+        status: 'upcoming', time: '19:00', nextMatchId: 'M7', nextMatchSide: 'away'
+      });
+      // Slot Kosong Grand Final
+      fixtures.push({
+        matchId: 'M7', round: 3, stage: 'final',
+        homeTeamName: 'Pemenang Semifinal 1', homeTeamIcon: '🕒',
+        awayTeamName: 'Pemenang Semifinal 2', awayTeamIcon: '🕒',
+        homeScore: null, awayScore: null, homePenaltyScore: null, awayPenaltyScore: null,
+        status: 'upcoming', time: '21:00', nextMatchId: null, nextMatchSide: null
+      });
     }
     return fixtures;
   };
@@ -78,25 +152,38 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
   const handleExecuteFirebase = async () => {
     const currentUser = auth.currentUser;
     if (!currentUser) return alert('Sesi login berakhir, silakan masuk kembali!');
-    if (teams.length < 2) return alert('Butuh minimal 2 tim untuk membuat turnamen, Coach!');
+    
+    // 🛡️ VALIDASI PRESET SISTEM GUGUR (CUP)
+    if (formData.format === 'cup' && teams.length !== 4 && teams.length !== 8) {
+      return alert('⚠️ FORMAT PRESET PIALA KELUAR!\n\nUntuk sistem gugur (Cup Knockout), jumlah tim terdaftar wajib berjumlah pas 4 Tim (Semifinal) atau 8 Tim (Perempat Final) agar bagan tanding simetris, Coach!');
+    }
+    if (formData.format === 'league' && teams.length < 2) {
+      return alert('Butuh minimal 2 tim untuk membuat turnamen format liga, Coach!');
+    }
+    
     setLoading(true);
 
     try {
       const batch = writeBatch(db);
       const compRef = doc(collection(db, 'competitions'));
       
-      // 1. Ambil list jadwal pertandingan dari core engine algorithm
-      const generatedFixtures = generateRoundRobinFixtures(teams);
+      // 1. Pilih jalur algoritma jadwal berdasarkan format pilihan admin
+      const generatedFixtures = formData.format === 'cup' 
+        ? generateKnockoutFixtures(teams)
+        : generateRoundRobinFixtures(teams);
 
-      // 2. Tembak data spesifikasi induk kompetisi ke Firestore (Ditambahkan userId)
+      // 2. Tembak data spesifikasi induk kompetisi ke Firestore
       batch.set(compRef, {
-        userId: currentUser.uid, // 👈 Kunci isolasi data per user akun privat
+        userId: currentUser.uid, 
         name: formData.name,
         sportType: formData.sportType,
         description: formData.description,
         icon: formData.icon,
         format: formData.format,
-        rules: formData.rules,
+        rules: {
+          ...formData.rules,
+          extraTime: formData.format === 'cup' ? true : formData.rules.extraTime // Otomatis aktifkan extra time jika piala
+        },
         teamCount: teams.length,
         status: 'active',
         createdAt: serverTimestamp()
@@ -113,22 +200,26 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
           stats: { gamesPlayed: 0, points: 0, wins: 0, draws: 0, losses: 0, goalDifference: 0 }
         });
 
-        // Cari relasi tim ini di dalam list fixtures untuk menyuntikkan ID relasi internalnya
+        // Hubungkan relasi ID tim internal untuk tim yang bermain di Babak 1 Piala / Seluruh Match Liga
         generatedFixtures.forEach(match => {
           if (match.homeTeamName === team.name) match.homeTeamId = teamId;
           if (match.awayTeamName === team.name) match.awayTeamId = teamId;
         });
       });
 
-      // 4. Tanam list jadwal pertandingan ke sub-koleksi /matches
+      // =========================================================================
+      // 4. Tanam list jadwal pertandingan ke sub-koleksi /matches (🔥 FIXED ID SINKRON)
+      // =========================================================================
       generatedFixtures.forEach((match, index) => {
-        const matchRef = doc(db, 'competitions', compRef.id, 'matches', `match_${index + 1}`);
+        // JIKA FORMAT CUP, GUNAKAN matchId BAWAAN (M1, M2, dst.) AGAR ENGINE TRANSAKSI KELOLOSAN BERJALAN SINKRON
+        const customMatchDocumentId = formData.format === 'cup' ? match.matchId : `match_${index + 1}`;
+        
+        const matchRef = doc(db, 'competitions', compRef.id, 'matches', customMatchDocumentId);
         batch.set(matchRef, match);
       });
 
-      // Eksekusi seluruh data secara serentak (Atomic Batch Operation)
       await batch.commit();
-      alert("🔥 BOOM! Kompetisi, Tim, dan Jadwal Pekanan Berhasil Disinkronisasi ke Cloud!");
+      alert("🔥 BOOM! Kompetisi, Tim, dan Struktur Bagan Berhasil Disinkronisasi ke Cloud!");
       onGenerateSuccess();
     } catch (err) {
       console.error("Firebase Sync Error: ", err);
@@ -183,14 +274,21 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
           <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Competition Review</p>
           <p className="text-xs text-white font-black mt-0.5">{formData.name || 'Untitled tournament'}</p>
           <p className="text-[10px] text-gray-400 font-medium mt-0.5 capitalize">
-            Format: {formData.format.replace('_', ' ')} • {formData.rules.duration} Mins • {formData.rules.extraTime ? 'Extra Time On' : 'No Extra Time'}
+            Format: {formData.format.replace('_', ' ')} • {formData.rules.duration} Mins • {formData.format === 'cup' ? 'Knockout Mode Active' : (formData.rules.extraTime ? 'Extra Time On' : 'No Extra Time')}
           </p>
         </div>
       </div>
 
       {/* INPUT FORM: TEAM NAME & LOGO (Full Styles Restored) */}
       <div className="flex flex-col gap-2 mt-1">
-        <label className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Register Teams ({teams.length})</label>
+        <div className="flex justify-between items-center px-1">
+          <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Register Teams ({teams.length})</label>
+          {formData.format === 'cup' && (
+            <span className="text-[9px] font-black text-neon-volt uppercase tracking-wider bg-neon-volt/10 border border-neon-volt/20 px-2 py-0.5 rounded-md">
+              Target: 4 atau 8 Tim
+            </span>
+          )}
+        </div>
         <div className="flex gap-2">
           <button
             onClick={() => setShowTeamIconModal(true)}

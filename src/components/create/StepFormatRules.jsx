@@ -1,9 +1,10 @@
 import { Layers, Award, GitBranch, Clock, Target, ShieldCheck } from 'lucide-react';
 
 export default function StepFormatRules({ formData, setFormData, onNext, onPrev }) {
+  // 🔥 FIXED MAPPING VALUE: Ubah id 'knockout' menjadi 'cup' agar sinkron dengan Knockout Engine di Step 3
   const formats = [
     { id: 'league', label: 'League', icon: Layers, desc: 'Round Robin' },
-    { id: 'knockout', label: 'Knockout', icon: Award, desc: 'Single Elimination' },
+    { id: 'cup', label: 'Knockout', icon: Award, desc: 'Single Elimination' },
     { id: 'group_stage', label: 'Group Stage', icon: GitBranch, desc: 'Groups + Playoff' },
   ];
 
@@ -12,6 +13,22 @@ export default function StepFormatRules({ formData, setFormData, onNext, onPrev 
       ...formData,
       rules: { ...formData.rules, [field]: value }
     });
+  };
+
+  // 🔥 CUSTOM CLICK INTERCEPTOR: Otomatis menghidupkan extra time jika memilih format Cup Knockout
+  const handleFormatSelect = (formatId) => {
+    if (formatId === 'cup') {
+      setFormData({
+        ...formData,
+        format: formatId,
+        rules: { ...formData.rules, extraTime: true } // Otomatis ON jika piala
+      });
+    } else {
+      setFormData({
+        ...formData,
+        format: formatId
+      });
+    }
   };
 
   return (
@@ -26,7 +43,8 @@ export default function StepFormatRules({ formData, setFormData, onNext, onPrev 
             return (
               <button
                 key={f.id}
-                onClick={() => setFormData({ ...formData, format: f.id })}
+                type="button"
+                onClick={() => handleFormatSelect(f.id)}
                 className={`p-3.5 rounded-xl border flex flex-col items-center justify-center text-center gap-1.5 transition-all ${
                   isSelected ? 'bg-neon-purple/10 border-neon-purple text-neon-purple' : 'bg-card-bg border-gray-800 text-gray-500'
                 }`}
@@ -83,6 +101,7 @@ export default function StepFormatRules({ formData, setFormData, onNext, onPrev 
               <span className="text-xs font-bold text-white">Extra Time (KO Stage)</span>
             </div>
             <button 
+              type="button"
               onClick={() => handleRuleChange('extraTime', !formData.rules.extraTime)}
               className={`w-9 h-5 rounded-full relative transition-colors ${formData.rules.extraTime ? 'bg-neon-purple' : 'bg-gray-800'}`}
             >
@@ -94,8 +113,8 @@ export default function StepFormatRules({ formData, setFormData, onNext, onPrev 
 
       {/* NAVIGATION ACTION BAR */}
       <div className="grid grid-cols-3 gap-2.5 mt-4">
-        <button onClick={onPrev} className="py-3.5 bg-card-bg border border-gray-800 text-white text-xs font-bold rounded-xl uppercase tracking-wider">Back</button>
-        <button onClick={onNext} className="col-span-2 py-3.5 bg-neon-purple text-white text-xs font-black rounded-xl shadow-lg uppercase tracking-wider">Next Step</button>
+        <button type="button" onClick={onPrev} className="py-3.5 bg-card-bg border border-gray-800 text-white text-xs font-bold rounded-xl uppercase tracking-wider">Back</button>
+        <button type="button" onClick={onNext} className="col-span-2 py-3.5 bg-neon-purple text-white text-xs font-black rounded-xl shadow-lg uppercase tracking-wider">Next Step</button>
       </div>
     </div>
   );

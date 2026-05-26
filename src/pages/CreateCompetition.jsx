@@ -10,11 +10,11 @@ export default function CreateCompetition() {
     sportType: 'Football',
     description: '',
     icon: '⚽', // Default selection icon awal
-    format: 'league',
+    format: 'league', // 👈 'league' (Komp. Penuh) atau 'cup' (Sistem Gugur Knockout)
     rules: {
       duration: 90,
       pointsWin: 3,
-      extraTime: false
+      extraTime: false // 👈 Akan jadi TRUE otomatis jika admin memilih format 'cup'
     }
   });
 
@@ -56,7 +56,6 @@ export default function CreateCompetition() {
             formData={formData} 
             setFormData={setFormData} 
             onNext={() => setStep(3)} 
-            onPrev={() => setStep(1)} 
           />
         )}
         {step === 3 && (

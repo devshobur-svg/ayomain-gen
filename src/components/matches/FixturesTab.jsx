@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db, auth } from '@/firebaseConfig'; // 👈 Inject auth instance
-import { collection, onSnapshot, collectionGroup, query, doc, runTransaction, updateDoc, setDoc, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, doc, runTransaction, updateDoc, setDoc, where, getDoc } from 'firebase/firestore';
 import { 
   Calendar, Trophy, ChevronRight, RefreshCw, Play, 
   CheckCircle, Plus, Minus, Users, X, UserPlus, ShieldAlert, ChevronDown
@@ -22,15 +22,22 @@ export default function FixturesTab() {
   const [playerNameInput, setPlayerNameInput] = useState('');
   const [selectedTeamTarget, setSelectedTeamTarget] = useState('home');
 
+  // 🔽 STATES BARU FOR CUP KNOCKOUT MODE: Pengendali skor adu penalti
+  const [showPenaltyModal, setShowPenaltyModal] = useState(false);
+  const [penaltyMatchData, setPenaltyMatchData] = useState(null);
+  const [homePenaltyInput, setHomePenaltyInput] = useState(0);
+  const [awayPenaltyInput, setAwayPenaltyInput] = useState(0);
+
+  // 🛰️ FIXED SECURITY LAYER: Mengganti collectionGroup global menjadi Sub-Collection Map Fetching Terisolasi
   useEffect(() => {
     const currentUser = auth.currentUser;
     if (!currentUser) return;
 
-    // 1. Langkah Pertama: Ambil seluruh kompetisi milik user yang sedang login
+    // 1. Ambil seluruh kompetisi milik user yang sedang login
     const compsRef = collection(db, 'competitions');
     const userCompsQuery = query(compsRef, where('userId', '==', currentUser.uid));
 
-    const unsubscribe = onSnapshot(userCompsQuery, (compSnapshot) => {
+    const unsubscribeLeagues = onSnapshot(userCompsQuery, (compSnapshot) => {
       const myCompIds = [];
       const compMap = {};
 
@@ -50,86 +57,91 @@ export default function FixturesTab() {
         return;
       }
 
-      // 2. Langkah Kedua: Ambil semua matches global via collectionGroup
-      const matchesQuery = query(collectionGroup(db, 'matches'));
-      onSnapshot(matchesQuery, (matchSnapshot) => {
-        const allMatches = matchSnapshot.docs.map(doc => {
-          const pathSegments = doc.ref.path.split('/');
-          return { id: doc.id, competitionId: pathSegments[1], ...doc.data() };
-        });
-
-        // 🔥 CRITICAL FIXED MULTI-USER: Filter matches yang kompetisinya murni milik user aktif
-        const filteredMatches = allMatches.filter(m => myCompIds.includes(m.competitionId) && m.status === filter);
+      // 🧠 AMAN & TERISOLASI: Lakukan loop onSnapshot terarah murni ke dalam koleksi internal milik admin
+      const activeUnsubscribes = myCompIds.map(compId => {
+        const matchesRef = collection(db, 'competitions', compId, 'matches');
         
-        // 🧠 DEEP DUAL-LAYER GROUPING ENGINE & SMART AUTO FOCUS DETECTOR
-        const bundledGroup = {};
-        const autoFocusPayload = { ...expandedRounds };
+        return onSnapshot(matchesRef, (matchSnapshot) => {
+          setGroupedMatches(prevGrouped => {
+            const bundledGroup = { ...prevGrouped };
+            const autoFocusPayload = { ...expandedRounds };
 
-        filteredMatches.forEach(match => {
-          const compInfo = compMap[match.competitionId] || { name: 'Unknown Competition', icon: '🏆' };
-          const compName = compInfo.name;
-          
-          if (!bundledGroup[compName]) {
-            bundledGroup[compName] = {
-              compId: match.competitionId,
-              compIcon: compInfo.icon,
-              rounds: {} // 👈 Menggunakan objek pecah per Pekan/Round
-            };
-          }
+            const compInfo = compMap[compId] || { name: 'Unknown Competition', icon: '🏆' };
+            const compName = compInfo.name;
 
-          const roundNum = match.round || 1;
-          if (!bundledGroup[compName].rounds[roundNum]) {
-            bundledGroup[compName].rounds[roundNum] = [];
-          }
-          
-          bundledGroup[compName].rounds[roundNum].push(match);
-        });
+            // Reset wadah rounds untuk liga spesifik ini agar tidak menumpuk saat trigger update score
+            if (bundledGroup[compName]) {
+              bundledGroup[compName].rounds = {};
+            }
 
-        // 🎯 SMART AUTO-FOCUS SYSTEM: Cari pekan terkecil yang butuh perhatian admin
-        Object.keys(bundledGroup).forEach(compName => {
-          const compData = bundledGroup[compName];
-          const roundNumbers = Object.keys(compData.rounds).map(Number).sort((a, b) => a - b);
-          
-          let focusedRoundFound = false;
+            matchSnapshot.docs.forEach(mDoc => {
+              const matchData = { id: mDoc.id, competitionId: compId, ...mDoc.data() };
+              
+              // Saring data real-time murni berdasarkan tab filter aktif
+              if (matchData.status !== filter) return;
 
-          // Cari pekan pertama yang isinya masih pending (upcoming / live)
-          for (let r of roundNumbers) {
-            const hasPendingMatch = compData.rounds[r].some(m => m.status === 'upcoming' || m.status === 'live');
-            const uniqueKey = `${compData.compId}_${r}`;
-
-            if (hasPendingMatch && !focusedRoundFound) {
-              // Jika ini pekan pertama yang pending, buka otomatis!
-              if (autoFocusPayload[uniqueKey] === undefined) {
-                autoFocusPayload[uniqueKey] = true;
+              if (!bundledGroup[compName]) {
+                bundledGroup[compName] = {
+                  compId: compId,
+                  compIcon: compInfo.icon,
+                  rounds: {}
+                };
               }
-              focusedRoundFound = true;
-            } else {
-              // Pekan lainnya dibiarkan tertutup rapi
-              if (autoFocusPayload[uniqueKey] === undefined) {
-                autoFocusPayload[uniqueKey] = false;
+
+              const roundNum = matchData.round || 1;
+              if (!bundledGroup[compName].rounds[roundNum]) {
+                bundledGroup[compName].rounds[roundNum] = [];
+              }
+
+              // Mencegah redudansi data masuk ke array
+              const isDuplicate = bundledGroup[compName].rounds[roundNum].some(m => m.id === matchData.id);
+              if (!isDuplicate) {
+                bundledGroup[compName].rounds[roundNum].push(matchData);
+              }
+            });
+
+            // 🎯 SMART AUTO-FOCUS SYSTEM: Buka pekan aktif pertama yang terdeteksi
+            const compData = bundledGroup[compName];
+            if (compData && compData.rounds) {
+              const roundNumbers = Object.keys(compData.rounds).map(Number).sort((a, b) => a - b);
+              let focusedRoundFound = false;
+
+              for (let r of roundNumbers) {
+                const hasPendingMatch = compData.rounds[r].some(m => m.status === 'upcoming' || m.status === 'live');
+                const uniqueKey = `${compId}_${r}`;
+
+                if (hasPendingMatch && !focusedRoundFound) {
+                  if (autoFocusPayload[uniqueKey] === undefined) autoFocusPayload[uniqueKey] = true;
+                  focusedRoundFound = true;
+                } else {
+                  if (autoFocusPayload[uniqueKey] === undefined) autoFocusPayload[uniqueKey] = false;
+                }
               }
             }
-          }
 
-          // Fallback: Jika semua pertandingan di semua pekan sudah kelar, default buka pekan pertama saja
-          if (!focusedRoundFound && roundNumbers.length > 0) {
-            const uniqueKey = `${compData.compId}_${roundNumbers[0]}`;
-            if (autoFocusPayload[uniqueKey] === undefined) {
-              autoFocusPayload[uniqueKey] = true;
+            // Bersihkan sisa properti nama kompetisi kosong jika filternya nihil
+            if (bundledGroup[compName] && Object.keys(bundledGroup[compName].rounds).length === 0) {
+              delete bundledGroup[compName];
             }
-          }
-        });
 
-        setExpandedRounds(autoFocusPayload);
-        setGroupedMatches(bundledGroup);
-        setLoading(false);
+            return bundledGroup;
+          });
+          
+          setLoading(false);
+        });
       });
+
+      // Fungsi pembersih multi-listener subscriber
+      return () => {
+        activeUnsubscribes.forEach(unsub => unsub());
+      };
+
     }, (err) => {
-      console.error("Error multi-user fixtures sync: ", err);
+      console.error("Error secure fixtures sync: ", err);
       setLoading(false);
     });
 
-    return unsubscribe;
+    return () => unsubscribeLeagues();
   }, [filter]);
 
   // 🔄 ACTION TOGGLE ACCORDION PANEL
@@ -199,64 +211,145 @@ export default function FixturesTab() {
     }
   };
 
+  // 🔥 EKSEKUTOR MODUL KEDUA: Submit skor adu penalti & trigger estafet kelolosan otomatis
+  const handleExecutePenaltyFinish = async () => {
+    if (homePenaltyInput === awayPenaltyInput) return alert("Skor adu penalti gak boleh seri, Coach! Harus ada pemenang mutlak.");
+    const { compId, match } = penaltyMatchData;
+    setShowPenaltyModal(false);
+    await executeFinalClosure(compId, match, homePenaltyInput, awayPenaltyInput);
+  };
+
   const handleFinishMatch = async (compId, match) => {
-    if (!confirm(`Kunci skor akhir ${match.homeTeamName} ${match.homeScore} - ${match.awayScore} ${match.awayTeamName}?`)) return;
+    const hScore = match.homeScore ?? 0;
+    const aScore = match.awayScore ?? 0;
+
+    // 👁️ VALIDASI FORMAT INDUK: Ambil format untuk deteksi apakah butuh adu penalti
+    const compDoc = await getDoc(doc(db, 'competitions', compId));
+    const isCupFormat = compDoc.exists() && compDoc.data().format === 'cup';
+
+    if (isCupFormat && hScore === aScore) {
+      // Jika seri di format Cup, paksa buka modal adu penalti
+      setHomePenaltyInput(0);
+      setAwayPenaltyInput(0);
+      setPenaltyMatchData({ compId, match });
+      setShowPenaltyModal(true);
+      return;
+    }
+
+    if (!confirm(`Kunci skor akhir ${match.homeTeamName} ${hScore} - ${aScore} ${match.awayTeamName}?`)) return;
+    await executeFinalClosure(compId, match, null, null);
+  };
+
+  // 🧠 CORE ARS_ENGINE: Fungsi penutupan laga terpadu (Mendukung Liga & Cup Knockout)
+  const executeFinalClosure = async (compId, match, homePen, awayPen) => {
     const hScore = match.homeScore ?? 0;
     const aScore = match.awayScore ?? 0;
 
     try {
-      let homeWin = 0, homeDraw = 0, homeLoss = 0, homePts = 0;
-      let awayWin = 0, awayDraw = 0, awayLoss = 0, awayPts = 0;
-
-      if (hScore > aScore) { homeWin = 1; homePts = 3; awayLoss = 1; }
-      else if (hScore < aScore) { awayWin = 1; awayPts = 3; homeLoss = 1; }
-      else { homeDraw = 1; homePts = 1; awayDraw = 1; awayPts = 1; }
+      const compDocRef = doc(db, 'competitions', compId);
+      const compSnap = await getDoc(compDocRef);
+      const isCupFormat = compSnap.exists() && compSnap.data().format === 'cup';
 
       const matchDocRef = doc(db, 'competitions', compId, 'matches', match.id);
-      const homeTeamDocRef = doc(db, 'competitions', compId, 'teams', match.homeTeamId);
-      const awayTeamDocRef = doc(db, 'competitions', compId, 'teams', match.awayTeamId);
 
-      await runTransaction(db, async (transaction) => {
-        const homeTeamDoc = await transaction.get(homeTeamDocRef);
-        const awayTeamDoc = await transaction.get(awayTeamDocRef);
+      if (isCupFormat) {
+        // =========================================================================
+        // 🏆 JALUR FORMAT PIALA/CUP (KNOCKOUT ADVANCEMENT LOGIC)
+        // =========================================================================
+        let winnerId = '';
+        let winnerName = '';
+        let winnerIcon = '';
 
-        if (!homeTeamDoc.exists() || !awayTeamDoc.exists()) throw "Dokumen tim tidak ditemukan!";
-        const currentHomeStats = homeTeamDoc.data().stats;
-        const currentAwayStats = awayTeamDoc.data().stats;
+        if (homePen !== null && awayPen !== null) {
+          if (homePen > awayPen) {
+            winnerId = match.homeTeamId; winnerName = match.homeTeamName; winnerIcon = match.homeTeamIcon;
+          } else {
+            winnerId = match.awayTeamId; winnerName = match.awayTeamName; winnerIcon = match.awayTeamIcon;
+          }
+        } else {
+          if (hScore > aScore) {
+            winnerId = match.homeTeamId; winnerName = match.homeTeamName; winnerIcon = match.homeTeamIcon;
+          } else {
+            winnerId = match.awayTeamId; winnerName = match.awayTeamName; winnerIcon = match.awayTeamIcon;
+          }
+        }
 
-        transaction.update(matchDocRef, { status: 'finished' });
-        transaction.update(homeTeamDocRef, {
-          "stats.gamesPlayed": currentHomeStats.gamesPlayed + 1,
-          "stats.wins": currentHomeStats.wins + homeWin,
-          "stats.draws": currentHomeStats.draws + homeDraw,
-          "stats.losses": currentHomeStats.losses + homeLoss,
-          "stats.goalDifference": currentHomeStats.goalDifference + (hScore - aScore),
-          "stats.points": currentHomeStats.points + homePts,
+        await runTransaction(db, async (transaction) => {
+          const updatePayload = { status: 'finished' };
+          if (homePen !== null) {
+            updatePayload.homePenaltyScore = homePen;
+            updatePayload.awayPenaltyScore = awayPen;
+          }
+          transaction.update(matchDocRef, updatePayload);
+
+          if (match.nextMatchId && match.nextMatchSide) {
+            const nextMatchDocRef = doc(db, 'competitions', compId, 'matches', match.nextMatchId);
+            
+            if (match.nextMatchSide === 'home') {
+              transaction.update(nextMatchDocRef, {
+                homeTeamId: winnerId,
+                homeTeamName: winnerName,
+                homeTeamIcon: winnerIcon
+              });
+            } else if (match.nextMatchSide === 'away') {
+              transaction.update(nextMatchDocRef, {
+                awayTeamId: winnerId,
+                awayTeamName: winnerName,
+                awayTeamIcon: winnerIcon
+              });
+            }
+          }
         });
-        transaction.update(awayTeamDocRef, {
-          "stats.gamesPlayed": currentAwayStats.gamesPlayed + 1,
-          "stats.wins": currentAwayStats.wins + awayWin,
-          "stats.draws": currentAwayStats.draws + awayDraw,
-          "stats.losses": currentAwayStats.losses + awayLoss,
-          "stats.goalDifference": currentAwayStats.goalDifference + (aScore - hScore),
-          "stats.points": currentAwayStats.points + awayPts,
+
+        alert(`🏆 BERSALIN SLOT!\n\n"${winnerName.toUpperCase()}" resmi memenangkan laga knockout dan melaju otomatis ke babak berikutnya!`);
+      } else {
+        // =========================================================================
+        // 🔄 JALUR FORMAT LIGA STANDAR (ROUND ROBIN STATISTICS UPDATER)
+        // =========================================================================
+        let homeWin = 0, homeDraw = 0, homeLoss = 0, homePts = 0;
+        let awayWin = 0, awayDraw = 0, awayLoss = 0, awayPts = 0;
+
+        if (hScore > aScore) { homeWin = 1; homePts = 3; awayLoss = 1; }
+        else if (hScore < aScore) { awayWin = 1; awayPts = 3; homeLoss = 1; }
+        else { homeDraw = 1; homePts = 1; awayDraw = 1; awayPts = 1; }
+
+        const homeTeamDocRef = doc(db, 'competitions', compId, 'teams', match.homeTeamId);
+        const awayTeamDocRef = doc(db, 'competitions', compId, 'teams', match.awayTeamId);
+
+        await runTransaction(db, async (transaction) => {
+          const homeTeamDoc = await transaction.get(homeTeamDocRef);
+          const awayTeamDoc = await transaction.get(awayTeamDocRef);
+
+          if (!homeTeamDoc.exists() || !awayTeamDoc.exists()) throw "Dokumen tim tidak ditemukan!";
+          const currentHomeStats = homeTeamDoc.data().stats;
+          const currentAwayStats = awayTeamDoc.data().stats;
+
+          transaction.update(matchDocRef, { status: 'finished' });
+          transaction.update(homeTeamDocRef, {
+            "stats.gamesPlayed": currentHomeStats.gamesPlayed + 1,
+            "stats.wins": currentHomeStats.wins + homeWin,
+            "stats.draws": currentHomeStats.draws + homeDraw,
+            "stats.losses": currentHomeStats.losses + homeLoss,
+            "stats.goalDifference": currentHomeStats.goalDifference + (hScore - aScore),
+            "stats.points": currentHomeStats.points + homePts,
+          });
+          transaction.update(awayTeamDocRef, {
+            "stats.gamesPlayed": currentAwayStats.gamesPlayed + 1,
+            "stats.wins": currentAwayStats.wins + awayWin,
+            "stats.draws": currentAwayStats.draws + awayDraw,
+            "stats.losses": currentAwayStats.losses + awayLoss,
+            "stats.goalDifference": currentAwayStats.goalDifference + (aScore - hScore),
+            "stats.points": currentAwayStats.points + awayPts,
+          });
         });
-      });
-      alert("🚀 Pertandingan selesai! Tabel klasemen ter-kalkulasi otomatis!");
+        alert("🚀 Pertandingan selesai! Tabel klasemen liga ter-kalkulasi otomatis!");
+      }
       setFilter('finished');
     } catch (err) {
       console.error(err);
+      alert("Gagal mengunci skor pertandingan. Cek konsol eror.");
     }
   };
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-xs text-gray-500 gap-2">
-        <RefreshCw className="animate-spin text-neon-purple" size={20} />
-        <span>Sinking real-time user scoreboard...</span>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col gap-4 animate-fadeIn text-white">
@@ -284,7 +377,6 @@ export default function FixturesTab() {
         {Object.keys(groupedMatches).length > 0 ? (
           Object.keys(groupedMatches).map((compName) => {
             const compData = groupedMatches[compName];
-            // Ambil semua nomor pekan lalu urutkan dari terkecil ke terbesar
             const roundNumbers = Object.keys(compData.rounds).map(Number).sort((a, b) => a - b);
 
             return (
@@ -318,7 +410,9 @@ export default function FixturesTab() {
                         >
                           <div className="flex items-center gap-2">
                             <span className="w-1.5 h-1.5 rounded-full bg-neon-purple shadow-[0_0_8px_rgba(99,102,241,0.8)]" />
-                            <span className="text-xs font-black text-white uppercase tracking-wider">Pekan {roundNum}</span>
+                            <span className="text-xs font-black text-white uppercase tracking-wider">
+                              {matchesInRound[0]?.stage ? `Babak ${matchesInRound[0].stage.toUpperCase()}` : `Pekan ${roundNum}`}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-[10px] text-gray-500 font-bold uppercase tracking-tight">{matchesInRound.length} Matches</span>
@@ -355,6 +449,12 @@ export default function FixturesTab() {
                                           <span className="text-gray-600 font-normal text-xs">:</span>
                                           <span className={match.status === 'live' ? 'text-neon-volt font-black text-base' : 'text-white'}>{match.awayScore ?? 0}</span>
                                         </div>
+                                        {/* Cetak Skor Penalti Info jika terkunci via adu tos-tosan */}
+                                        {match.homePenaltyScore !== undefined && match.homePenaltyScore !== null && (
+                                          <span className="text-[9px] text-neon-volt font-bold uppercase tracking-widest mt-1 bg-neon-volt/10 border border-neon-volt/20 px-1.5 py-0.5 rounded">
+                                            Pen: ({match.homePenaltyScore} - {match.awayPenaltyScore})
+                                          </span>
+                                        )}
                                       </div>
                                     ) : (
                                       <div className="flex items-center gap-1 bg-black/40 border border-gray-800/80 px-2.5 py-1 rounded-lg shadow-inner">
@@ -428,6 +528,53 @@ export default function FixturesTab() {
           </div>
         )}
       </div>
+
+      {/* 🔮 MODAL POP-UP BARU: FORCED PENALTY SHOOTOUT INPUT DRAWER */}
+      {showPenaltyModal && penaltyMatchData && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[60] p-4 flex flex-col justify-end animate-fadeIn">
+          <div className="bg-[#18181f] border border-gray-800 rounded-t-3xl p-4 w-full flex flex-col max-h-[50vh]">
+            <div className="flex justify-between items-center border-b border-gray-800 pb-2 mb-4">
+              <span className="text-[10px] font-black text-white uppercase tracking-widest flex items-center gap-1.5">
+                <Trophy size={14} className="text-neon-volt" /> ADU PENALTY TIE-BREAKER
+              </span>
+              <button onClick={() => setShowPenaltyModal(false)} className="text-gray-500 hover:text-white p-1"><X size={16} /></button>
+            </div>
+            
+            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-normal text-center mb-3">
+              Skor imbang {penaltyMatchData.match.homeScore} - {penaltyMatchData.match.awayScore} di babak gugur. Tentukan pemenang via adu tos-tosan:
+            </p>
+
+            <div className="grid grid-cols-3 gap-4 bg-black/40 p-4 border border-gray-800 rounded-xl items-center text-center mb-5 shadow-inner">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-black truncate block text-white uppercase">{penaltyMatchData.match.homeTeamName}</span>
+                <input 
+                  type="number" 
+                  value={homePenaltyInput} 
+                  onChange={(e) => setHomePenaltyInput(parseInt(e.target.value) || 0)}
+                  className="w-full bg-zinc-900 border border-gray-800 p-2 text-center text-sm rounded-xl text-white outline-none font-black focus:border-neon-purple"
+                />
+              </div>
+              <span className="text-[11px] font-black text-gray-600">PENALTI</span>
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-black truncate block text-white uppercase">{penaltyMatchData.match.awayTeamName}</span>
+                <input 
+                  type="number" 
+                  value={awayPenaltyInput} 
+                  onChange={(e) => setAwayPenaltyInput(parseInt(e.target.value) || 0)}
+                  className="w-full bg-zinc-900 border border-gray-800 p-2 text-center text-sm rounded-xl text-white outline-none font-black focus:border-neon-purple"
+                />
+              </div>
+            </div>
+
+            <button 
+              onClick={handleExecutePenaltyFinish}
+              className="w-full py-3.5 bg-gradient-to-r from-neon-volt to-emerald-500 text-black text-xs font-black rounded-xl uppercase tracking-wider shadow-lg active:scale-95 transition-transform"
+            >
+              Kunci Kelolosan Tim 🚀
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* LINEUP MODAL DRAWER (Original Lu) */}
       {showLineupModal && activeMatchContext && (

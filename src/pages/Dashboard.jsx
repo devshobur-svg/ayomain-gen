@@ -7,7 +7,8 @@ import {
   Share2 // 🆕 Tambah ikon share untuk generator link publik
 } from 'lucide-react';
 
-export default function Dashboard({ setActiveTab }) {
+// 🔥 SEKARANG MENERIMA PROPS 'user' DARI APP.JSX UNTUK REAL-TIME REACTIVE TEXT
+export default function Dashboard({ setActiveTab, user }) {
   // Database States
   const [stats, setStats] = useState({ matches: 0, leagues: 0, teams: 0 });
   const [competitions, setCompetitions] = useState([]);
@@ -187,9 +188,12 @@ export default function Dashboard({ setActiveTab }) {
           <span className="text-[8px] font-black uppercase tracking-widest bg-neon-volt/10 text-neon-volt border border-neon-volt/20 px-2 py-0.5 rounded-md">
             Tournament HQ Control
           </span>
+          
+          {/* 🔥 SEKARANG NAMA 100% DINAMIS BERDASARKAN PROPS DAN FALLBACK SMART EMAIL EXTRACTOR */}
           <h2 className="text-sm font-black text-white mt-2 leading-snug">
-            Welcome Back, {auth.currentUser?.displayName || 'Coach Shobur'}!
+            Welcome Back, {user?.displayName || user?.email?.split('@')[0] || 'Coach'}!
           </h2>
+          
           <p className="text-[10px] text-gray-400 mt-1 leading-normal">
             Realtime database manager is active. Easily customize competition parameters, sync squad lineups, and adjust atomic fixtures tables.
           </p>
