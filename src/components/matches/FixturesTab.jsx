@@ -46,7 +46,9 @@ export default function FixturesTab() {
         const data = cDoc.data();
         compMap[cDoc.id] = {
           name: data.name || 'Unknown Competition',
-          icon: data.icon || '🏆'
+          icon: data.icon || '🏆',
+          teamCount: data.teamCount || 2, // 👈 Ambil jumlah tim terdaftar untuk kalkulasi pembagi putaran
+          format: data.format || 'league'
         };
       });
 
@@ -66,7 +68,7 @@ export default function FixturesTab() {
             const bundledGroup = { ...prevGrouped };
             const autoFocusPayload = { ...expandedRounds };
 
-            const compInfo = compMap[compId] || { name: 'Unknown Competition', icon: '🏆' };
+            const compInfo = compMap[compId] || { name: 'Unknown Competition', icon: '🏆', teamCount: 2, format: 'league' };
             const compName = compInfo.name;
 
             // Reset wadah rounds untuk liga spesifik ini agar tidak menumpuk saat trigger update score
@@ -84,6 +86,8 @@ export default function FixturesTab() {
                 bundledGroup[compName] = {
                   compId: compId,
                   compIcon: compInfo.icon,
+                  teamCount: compInfo.teamCount,
+                  format: compInfo.format,
                   rounds: {}
                 };
               }
@@ -228,7 +232,6 @@ export default function FixturesTab() {
     const isCupFormat = compDoc.exists() && compDoc.data().format === 'cup';
 
     if (isCupFormat && hScore === aScore) {
-      // Jika seri di format Cup, paksa buka modal adu penalti
       setHomePenaltyInput(0);
       setAwayPenaltyInput(0);
       setPenaltyMatchData({ compId, match });
@@ -379,6 +382,10 @@ export default function FixturesTab() {
             const compData = groupedMatches[compName];
             const roundNumbers = Object.keys(compData.rounds).map(Number).sort((a, b) => a - b);
 
+            // 🧠 HITUNG BATAS PUTARAN SECARA DINAMIS (Untuk Labeling Home & Away)
+            const actualTeams = compData.teamCount % 2 !== 0 ? compData.teamCount + 1 : compData.teamCount;
+            const roundsPerLeg = actualTeams - 1;
+
             return (
               <div key={compName} className="flex flex-col gap-3.5">
                 
@@ -400,6 +407,15 @@ export default function FixturesTab() {
                     const isExpanded = !!expandedRounds[uniqueKey];
                     const matchesInRound = compData.rounds[roundNum];
 
+                    // 🧠 DYNAMIC LABEL GENERATOR: Menentukan teks label putaran 1 atau 2 di UI
+                    let roundDisplayLabel = `Pekan ${roundNum}`;
+                    if (compData.format === 'league') {
+                      const currentLeg = roundNum > roundsPerLeg ? 2 : 1;
+                      roundDisplayLabel = `Pekan ${roundNum} (Putaran ${currentLeg})`;
+                    } else if (matchesInRound[0]?.stage) {
+                      roundDisplayLabel = `Babak ${matchesInRound[0].stage.toUpperCase()}`;
+                    }
+
                     return (
                       <div key={roundNum} className="flex flex-col gap-2 border border-gray-900 bg-black/20 rounded-xl overflow-hidden transition-all">
                         
@@ -411,7 +427,7 @@ export default function FixturesTab() {
                           <div className="flex items-center gap-2">
                             <span className="w-1.5 h-1.5 rounded-full bg-neon-purple shadow-[0_0_8px_rgba(99,102,241,0.8)]" />
                             <span className="text-xs font-black text-white uppercase tracking-wider">
-                              {matchesInRound[0]?.stage ? `Babak ${matchesInRound[0].stage.toUpperCase()}` : `Pekan ${roundNum}`}
+                              {roundDisplayLabel}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
@@ -529,7 +545,7 @@ export default function FixturesTab() {
         )}
       </div>
 
-      {/* 🔮 MODAL POP-UP BARU: FORCED PENALTY SHOOTOUT INPUT DRAWER */}
+      {/* 🔮 MODAL POP-UP: FORCED PENALTY SHOOTOUT INPUT DRAWER */}
       {showPenaltyModal && penaltyMatchData && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[60] p-4 flex flex-col justify-end animate-fadeIn">
           <div className="bg-[#18181f] border border-gray-800 rounded-t-3xl p-4 w-full flex flex-col max-h-[50vh]">

@@ -35,7 +35,7 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
     setTeams(teams.filter((_, i) => i !== index));
   };
 
-  // 🧠 ENGINE LIGA 1: Menghitung jadwal tanding silang otomatis (Original Lu)
+  // 🧠 ENGINE LIGA 1 (UPGRADED TO HOME & AWAY): Menghitung jadwal tanding silang otomatis dua putaran
   const generateRoundRobinFixtures = (teamsList) => {
     let list = [...teamsList];
     
@@ -44,17 +44,20 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
     }
 
     const numTeams = list.length;
-    const rounds = numTeams - 1;
+    const roundsInLeg = numTeams - 1; // Jumlah pekan per satu putaran tunggal
     const halfSize = numTeams / 2;
-    const fixtures = [];
+    const leg1Fixtures = [];
 
-    for (let round = 0; round < rounds; round++) {
+    // =========================================================================
+    // 🏠 PUTARAN 1: LEG FIRST (HOME MATCHES)
+    // =========================================================================
+    for (let round = 0; round < roundsInLeg; round++) {
       for (let i = 0; i < halfSize; i++) {
         const home = list[i];
         const away = list[numTeams - 1 - i];
 
         if (!home.isBye && !away.isBye) {
-          fixtures.push({
+          leg1Fixtures.push({
             round: round + 1,
             homeTeamName: home.name,
             homeTeamIcon: home.icon,
@@ -69,7 +72,21 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
       }
       list.splice(1, 0, list.pop());
     }
-    return fixtures;
+
+    // =========================================================================
+    // ✈️ PUTARAN 2: LEG SECOND (AWAY MATCHES - POSISI DIBALIK OTOMATIS)
+    // =========================================================================
+    const leg2Fixtures = leg1Fixtures.map(match => ({
+      ...match,
+      round: match.round + roundsInLeg, // Melanjutkan nomor pekan sekuensial (Contoh: Pekan 1 + 3 = Pekan 4)
+      homeTeamName: match.awayTeamName,  // 👈 SEBALIKNYA: Away lama menjadi Home baru
+      homeTeamIcon: match.awayTeamIcon,
+      awayTeamName: match.homeTeamName,  // 👈 SEBALIKNYA: Home lama menjadi Away baru
+      awayTeamIcon: match.homeTeamIcon,
+    }));
+
+    // Satukan kedua leg menjadi satu rangkaian kalender kompetisi penuh raksasa
+    return [...leg1Fixtures, ...leg2Fixtures];
   };
 
   // 🧠 ENGINE PIALA 2: Pembuat bagan pohon biner otomatis untuk Sistem Gugur (Knockout Matrix)
@@ -81,7 +98,7 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
       // 🏆 FORMAT PRESET 4 TIM: Langsung Babak Semifinal
       fixtures.push({
         matchId: 'M1',
-        round: 1, // Kita simpan nomor urut round agar sinkron dengan layout pekanan lu
+        round: 1, 
         stage: 'semifinal',
         homeTeamName: teamsList[0].name, homeTeamIcon: teamsList[0].icon,
         awayTeamName: teamsList[1].name, awayTeamIcon: teamsList[1].icon,
@@ -182,7 +199,7 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
         format: formData.format,
         rules: {
           ...formData.rules,
-          extraTime: formData.format === 'cup' ? true : formData.rules.extraTime // Otomatis aktifkan extra time jika piala
+          extraTime: formData.format === 'cup' ? true : formData.rules.extraTime
         },
         teamCount: teams.length,
         status: 'active',
@@ -200,7 +217,7 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
           stats: { gamesPlayed: 0, points: 0, wins: 0, draws: 0, losses: 0, goalDifference: 0 }
         });
 
-        // Hubungkan relasi ID tim internal untuk tim yang bermain di Babak 1 Piala / Seluruh Match Liga
+        // Hubungkan relasi ID tim internal
         generatedFixtures.forEach(match => {
           if (match.homeTeamName === team.name) match.homeTeamId = teamId;
           if (match.awayTeamName === team.name) match.awayTeamId = teamId;
@@ -208,10 +225,9 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
       });
 
       // =========================================================================
-      // 4. Tanam list jadwal pertandingan ke sub-koleksi /matches (🔥 FIXED ID SINKRON)
+      // 4. Tanam list jadwal pertandingan ke sub-koleksi /matches (DOCK_ID FIXED)
       // =========================================================================
       generatedFixtures.forEach((match, index) => {
-        // JIKA FORMAT CUP, GUNAKAN matchId BAWAAN (M1, M2, dst.) AGAR ENGINE TRANSAKSI KELOLOSAN BERJALAN SINKRON
         const customMatchDocumentId = formData.format === 'cup' ? match.matchId : `match_${index + 1}`;
         
         const matchRef = doc(db, 'competitions', compRef.id, 'matches', customMatchDocumentId);
@@ -232,7 +248,7 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
   return (
     <div className="flex flex-col gap-4 animate-fadeIn relative">
       
-      {/* POP-UP MODAL: MINI TEAM ICON PICKER (Full Styles Restored) */}
+      {/* POP-UP MODAL: MINI TEAM ICON PICKER */}
       {showTeamIconModal && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 p-4 flex flex-col justify-end animate-fadeIn">
           <div className="bg-[#18181f] border border-gray-800 rounded-t-3xl max-h-[60vh] flex flex-col p-4 w-full animate-slideUp">
@@ -265,7 +281,7 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
         </div>
       )}
 
-      {/* DYNAMIC LIVE REVIEW SUMMARY CARD (Full Styles Restored) */}
+      {/* DYNAMIC LIVE REVIEW SUMMARY CARD */}
       <div className="bg-neon-purple/5 border border-neon-purple/20 rounded-xl p-3.5 flex items-start gap-3">
         <div className="text-xl bg-black/30 p-1.5 rounded-lg border border-gray-800/60 shadow-inner">
           {formData.icon}
@@ -279,7 +295,7 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
         </div>
       </div>
 
-      {/* INPUT FORM: TEAM NAME & LOGO (Full Styles Restored) */}
+      {/* INPUT FORM: TEAM NAME & LOGO */}
       <div className="flex flex-col gap-2 mt-1">
         <div className="flex justify-between items-center px-1">
           <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Register Teams ({teams.length})</label>
@@ -316,7 +332,7 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
         </div>
       </div>
 
-      {/* RENDER LIST OF REGISTERED TEAMS (Full Styles Restored) */}
+      {/* RENDER LIST OF REGISTERED TEAMS */}
       <div className="max-h-48 overflow-y-auto bg-card-bg border border-gray-800 rounded-xl p-2 flex flex-col gap-1.5 shadow-inner">
         {teams.map((team, index) => (
           <div key={index} className="flex justify-between items-center bg-[#151515] px-3.5 py-2.5 rounded-lg border border-gray-800/40 group">
@@ -332,7 +348,7 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
         ))}
       </div>
 
-      {/* BUTTON FOOTER NAVIGATION (Full Styles Restored) */}
+      {/* BUTTON FOOTER NAVIGATION */}
       <div className="grid grid-cols-3 gap-2.5 mt-2">
         <button onClick={onPrev} disabled={loading} className="py-3.5 bg-card-bg border border-gray-800 text-white text-xs font-bold rounded-xl uppercase tracking-wider">Back</button>
         <button
