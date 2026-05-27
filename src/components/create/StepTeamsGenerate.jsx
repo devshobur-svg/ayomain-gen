@@ -212,6 +212,7 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
         const teamRef = doc(db, 'competitions', compRef.id, 'teams', teamId);
         
         batch.set(teamRef, {
+          userId: currentUser.uid, // 👈 INJEKSI EMAS: Gandeng ID admin langsung di level dokumen tim
           name: team.name,
           icon: team.icon,
           stats: { gamesPlayed: 0, points: 0, wins: 0, draws: 0, losses: 0, goalDifference: 0 }
@@ -230,8 +231,14 @@ export default function StepTeamsGenerate({ onPrev, formData, onGenerateSuccess 
       generatedFixtures.forEach((match, index) => {
         const customMatchDocumentId = formData.format === 'cup' ? match.matchId : `match_${index + 1}`;
         
+        // 👈 INJEKSI EMAS KEDUA: Berikan identitas pemilik langsung ke dokumen match objek
+        const secureMatchPayload = {
+          ...match,
+          userId: currentUser.uid 
+        };
+
         const matchRef = doc(db, 'competitions', compRef.id, 'matches', customMatchDocumentId);
-        batch.set(matchRef, match);
+        batch.set(matchRef, secureMatchPayload);
       });
 
       await batch.commit();

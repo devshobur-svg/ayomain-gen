@@ -47,12 +47,11 @@ export default function FixturesTab() {
         compMap[cDoc.id] = {
           name: data.name || 'Unknown Competition',
           icon: data.icon || '🏆',
-          teamCount: data.teamCount || 2, // 👈 Ambil jumlah tim terdaftar untuk kalkulasi pembagi putaran
+          teamCount: data.teamCount || 2, 
           format: data.format || 'league'
         };
       });
 
-      // Jika user baru belum punya kompetisi, langsung bypass matikan loading
       if (myCompIds.length === 0) {
         setGroupedMatches({});
         setLoading(false);
@@ -123,7 +122,6 @@ export default function FixturesTab() {
               }
             }
 
-            // Bersihkan sisa properti nama kompetisi kosong jika filternya nihil
             if (bundledGroup[compName] && Object.keys(bundledGroup[compName].rounds).length === 0) {
               delete bundledGroup[compName];
             }
@@ -135,7 +133,6 @@ export default function FixturesTab() {
         });
       });
 
-      // Fungsi pembersih multi-listener subscriber
       return () => {
         activeUnsubscribes.forEach(unsub => unsub());
       };
@@ -157,7 +154,8 @@ export default function FixturesTab() {
     }));
   };
 
-  const handleOpenLineupManager = (compId, match) => {
+  const handleOpenLineupManager = (match) => {
+    const compId = match.competitionId;
     setActiveMatchContext({ compId, ...match });
     setSelectedTeamTarget('home');
     setPlayerNameInput('');
@@ -189,18 +187,20 @@ export default function FixturesTab() {
     }
   };
 
-  const handleStartLive = async (compId, matchId) => {
+  const handleStartLive = async (match) => {
+    const compId = match.competitionId;
     try {
-      await updateDoc(doc(db, 'competitions', compId, 'matches', matchId), { status: 'live', homeScore: 0, awayScore: 0 });
+      await updateDoc(doc(db, 'competitions', compId, 'matches', match.id), { status: 'live', homeScore: 0, awayScore: 0 });
       setFilter('live');
     } catch (err) {
       console.error(err);
     }
   };
 
-  const handleUpdateLiveScore = async (compId, matchId, teamType, operation) => {
+  const handleUpdateLiveScore = async (match, teamType, operation) => {
+    const compId = match.competitionId;
     try {
-      const matchDocRef = doc(db, 'competitions', compId, 'matches', matchId);
+      const matchDocRef = doc(db, 'competitions', compId, 'matches', match.id);
       await runTransaction(db, async (transaction) => {
         const matchDoc = await transaction.get(matchDocRef);
         if (!matchDoc.exists()) return;
@@ -223,7 +223,8 @@ export default function FixturesTab() {
     await executeFinalClosure(compId, match, homePenaltyInput, awayPenaltyInput);
   };
 
-  const handleFinishMatch = async (compId, match) => {
+  const handleFinishMatch = async (match) => {
+    const compId = match.competitionId;
     const hScore = match.homeScore ?? 0;
     const aScore = match.awayScore ?? 0;
 
@@ -382,7 +383,6 @@ export default function FixturesTab() {
             const compData = groupedMatches[compName];
             const roundNumbers = Object.keys(compData.rounds).map(Number).sort((a, b) => a - b);
 
-            // 🧠 HITUNG BATAS PUTARAN SECARA DINAMIS (Untuk Labeling Home & Away)
             const actualTeams = compData.teamCount % 2 !== 0 ? compData.teamCount + 1 : compData.teamCount;
             const roundsPerLeg = actualTeams - 1;
 
@@ -407,7 +407,6 @@ export default function FixturesTab() {
                     const isExpanded = !!expandedRounds[uniqueKey];
                     const matchesInRound = compData.rounds[roundNum];
 
-                    // 🧠 DYNAMIC LABEL GENERATOR: Menentukan teks label putaran 1 atau 2 di UI
                     let roundDisplayLabel = `Pekan ${roundNum}`;
                     if (compData.format === 'league') {
                       const currentLeg = roundNum > roundsPerLeg ? 2 : 1;
@@ -465,7 +464,6 @@ export default function FixturesTab() {
                                           <span className="text-gray-600 font-normal text-xs">:</span>
                                           <span className={match.status === 'live' ? 'text-neon-volt font-black text-base' : 'text-white'}>{match.awayScore ?? 0}</span>
                                         </div>
-                                        {/* Cetak Skor Penalti Info jika terkunci via adu tos-tosan */}
                                         {match.homePenaltyScore !== undefined && match.homePenaltyScore !== null && (
                                           <span className="text-[9px] text-neon-volt font-bold uppercase tracking-widest mt-1 bg-neon-volt/10 border border-neon-volt/20 px-1.5 py-0.5 rounded">
                                             Pen: ({match.homePenaltyScore} - {match.awayPenaltyScore})
@@ -490,8 +488,8 @@ export default function FixturesTab() {
                                 <div className="border-t border-gray-900/60 pt-3 flex gap-2 relative z-10">
                                   {match.status === 'upcoming' && (
                                     <div className="grid grid-cols-3 gap-2 w-full">
-                                      <button onClick={() => handleOpenLineupManager(compData.compId, match)} className="bg-[#1b1b22] border border-gray-800 text-gray-400 hover:text-white py-2 rounded-xl flex items-center justify-center gap-1.5 text-[10px] font-bold"><Users size={12} /> Lineup</button>
-                                      <button onClick={() => handleStartLive(compData.compId, match.id)} className="col-span-2 text-center text-[10px] font-black bg-gradient-to-r from-neon-purple to-indigo-600 text-white py-2 rounded-xl flex items-center justify-center gap-1.5 uppercase tracking-wider"><Play size={10} /> Kick Off (LIVE)</button>
+                                      <button onClick={() => handleOpenLineupManager(match)} className="bg-[#1b1b22] border border-gray-800 text-gray-400 hover:text-white py-2 rounded-xl flex items-center justify-center gap-1.5 text-[10px] font-bold"><Users size={12} /> Lineup</button>
+                                      <button onClick={() => handleStartLive(match)} className="col-span-2 text-center text-[10px] font-black bg-gradient-to-r from-neon-purple to-indigo-600 text-white py-2 rounded-xl flex items-center justify-center gap-1.5 uppercase tracking-wider"><Play size={10} /> Kick Off (LIVE)</button>
                                     </div>
                                   )}
 
@@ -499,26 +497,26 @@ export default function FixturesTab() {
                                     <div className="flex flex-col gap-2.5 w-full">
                                       <div className="grid grid-cols-2 gap-3 text-center">
                                         <div className="flex items-center justify-between bg-black/40 p-1 px-2 rounded-xl border border-gray-800/50">
-                                          <button onClick={() => handleUpdateLiveScore(compData.compId, match.id, 'homeScore', 'sub')} className="p-1.5 bg-zinc-800 rounded-lg text-gray-400 hover:text-white"><Minus size={10} /></button>
+                                          <button onClick={() => handleUpdateLiveScore(match, 'homeScore', 'sub')} className="p-1.5 bg-zinc-800 rounded-lg text-gray-400 hover:text-white"><Minus size={10} /></button>
                                           <span className="text-[9px] font-black text-gray-500 uppercase">GOAL</span>
-                                          <button onClick={() => handleUpdateLiveScore(compData.compId, match.id, 'homeScore', 'add')} className="p-1.5 bg-neon-purple/20 border border-neon-purple/20 rounded-lg text-neon-purple"><Plus size={10} /></button>
+                                          <button onClick={() => handleUpdateLiveScore(match, 'homeScore', 'add')} className="p-1.5 bg-neon-purple/20 border border-neon-purple/20 rounded-lg text-neon-purple"><Plus size={10} /></button>
                                         </div>
                                         <div className="flex items-center justify-between bg-black/40 p-1 px-2 rounded-xl border border-gray-800/50">
-                                          <button onClick={() => handleUpdateLiveScore(compData.compId, match.id, 'awayScore', 'sub')} className="p-1.5 bg-zinc-800 rounded-lg text-gray-400 hover:text-white"><Minus size={10} /></button>
+                                          <button onClick={() => handleUpdateLiveScore(match, 'awayScore', 'sub')} className="p-1.5 bg-zinc-800 rounded-lg text-gray-400 hover:text-white"><Minus size={10} /></button>
                                           <span className="text-[9px] font-black text-gray-500 uppercase">GOAL</span>
-                                          <button onClick={() => handleUpdateLiveScore(compData.compId, match.id, 'awayScore', 'add')} className="p-1.5 bg-neon-purple/20 border border-neon-purple/20 rounded-lg text-neon-purple"><Plus size={10} /></button>
+                                          <button onClick={() => handleUpdateLiveScore(match, 'awayScore', 'add')} className="p-1.5 bg-neon-purple/20 border border-neon-purple/20 rounded-lg text-neon-purple"><Plus size={10} /></button>
                                         </div>
                                       </div>
                                       <div className="grid grid-cols-3 gap-2 w-full">
-                                        <button onClick={() => handleOpenLineupManager(compData.compId, match)} className="bg-[#1b1b22] border border-gray-800 text-gray-400 py-2 rounded-xl flex items-center justify-center gap-1 text-[10px] font-bold"><Users size={12} /> Lineup</button>
-                                        <button onClick={() => handleFinishMatch(compData.compId, match)} className="col-span-2 text-center text-[10px] font-black bg-gradient-to-r from-red-600 to-orange-600 text-white py-2 rounded-xl flex items-center justify-center gap-1.5 uppercase tracking-wider"><CheckCircle size={11} /> Finish Match</button>
+                                        <button onClick={() => handleOpenLineupManager(match)} className="bg-[#1b1b22] border border-gray-800 text-gray-400 py-2 rounded-xl flex items-center justify-center gap-1 text-[10px] font-bold"><Users size={12} /> Lineup</button>
+                                        <button onClick={() => handleFinishMatch(match)} className="col-span-2 text-center text-[10px] font-black bg-gradient-to-r from-red-600 to-orange-600 text-white py-2 rounded-xl flex items-center justify-center gap-1.5 uppercase tracking-wider"><CheckCircle size={11} /> Finish Match</button>
                                       </div>
                                     </div>
                                   )}
 
                                   {match.status === 'finished' && (
                                     <div className="flex justify-between items-center w-full px-1">
-                                      <button onClick={() => handleOpenLineupManager(compData.compId, match)} className="text-[10px] font-black text-gray-500 hover:text-white flex items-center gap-1 border border-gray-800 bg-black/20 px-2.5 py-1 rounded-lg"><Users size={11} /> View Lineup</button>
+                                      <button onClick={() => handleOpenLineupManager(match)} className="text-[10px] font-black text-gray-500 hover:text-white flex items-center gap-1 border border-gray-800 bg-black/20 px-2.5 py-1 rounded-lg"><Users size={11} /> View Lineup</button>
                                       <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">🛡️ Locked</span>
                                     </div>
                                   )}
