@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { db } from '@/firebaseConfig';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Trophy, Calendar, BarChart3, Activity, ShieldAlert, LogIn } from 'lucide-react';
-import PublicFixtures from './PublicFixtures';
+// 🔥 SINKRONISASI ARSITEKTUR: Arahkan nama import langsung ke file PublicStandings yang berisi update zona dinamis!
+import PublicStandings from './PublicStandings';
 
 export default function PublicViewer({ compId, onBackToAdmin }) {
   const [competition, setCompetition] = useState(null);
@@ -11,8 +12,9 @@ export default function PublicViewer({ compId, onBackToAdmin }) {
 
   useEffect(() => {
     if (!compId) return;
+    setLoading(true);
 
-    // 🛰️ DIRECT SINGLE FETCH: Ambil info liga secara publik berdasarkan ID unik URL
+    // 🛰️ DIRECT SINGLE FETCH: Ambil info liga secara publik berdasarkan ID unik URL (Aman & Bebas Logout)
     const compDocRef = doc(db, 'competitions', compId);
     const unsubscribe = onSnapshot(compDocRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -101,7 +103,7 @@ export default function PublicViewer({ compId, onBackToAdmin }) {
         </button>
         <button
           onClick={() => setPublicTab('standings')}
-          className={`py-2.5 text-[11px] font-black rounded-lg uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
+          className={`py-2.5 text-[11px] font-black rounded-lg uppercase tracking-wider flex items-center center gap-1.5 transition-all ${
             publicTab === 'standings'
               ? 'bg-gradient-to-r from-neon-purple to-indigo-600 text-white shadow-md border border-neon-purple/20'
               : 'text-gray-500 hover:text-gray-300'
@@ -111,9 +113,9 @@ export default function PublicViewer({ compId, onBackToAdmin }) {
         </button>
       </div>
 
-      {/* 🚀 CORE RENDERING JADWAL & KLASEMEN KHUSUS PENONTON */}
+      {/* 🚀 CORE RENDERING SINKRON JADWAL & KLASEMEN KHUSUS PENONTON */}
       <div className="animate-fadeIn">
-        <PublicFixtures compId={competition.id} currentMode={publicTab} />
+        <PublicStandings compId={competition.id} currentMode={publicTab} />
       </div>
 
     </div>

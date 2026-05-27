@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { db, auth } from '@/firebaseConfig';
-import { collection, onSnapshot, query, orderBy, where } from 'firebase/firestore';
-import { RefreshCw, ChevronDown, BarChart3, ListOrdered, Trophy, Skull } from 'lucide-react';
+import { collection, onSnapshot, query, orderBy, where, doc, updateDoc } from 'firebase/firestore';
+import { RefreshCw, ChevronDown, BarChart3, ListOrdered, Trophy, Settings2 } from 'lucide-react';
 
 export default function StandingsTab() {
   const [competitions, setCompetitions] = useState([]);
@@ -15,6 +15,9 @@ export default function StandingsTab() {
 
   // 📊 TOGGLE SUB-TAB MIKRO KLASEMEN: 'standard' atau 'analytics'
   const [standingsMode, setStandingsMode] = useState('standard');
+
+  // 🔽 STATE BARU: Mengontrol visibilitas dropdown filter konfigurasi zona dinamis
+  const [showZoneDropdown, setShowZoneDropdown] = useState(false);
 
   // 1. Ambil daftar seluruh kompetisi khusus milik User yang login
   useEffect(() => {
@@ -136,9 +139,24 @@ export default function StandingsTab() {
   const currentComp = competitions.find(c => c.id === selectedCompId);
   const totalTeams = teams.length;
 
-  // Helper boundary detector zona merah & emas
-  const isPodium = (idx) => idx < 3;
-  const isRelegation = (idx) => totalTeams >= 5 ? idx >= totalTeams - 3 : idx === totalTeams - 1 && totalTeams > 1;
+  // 🧠 DETEKTOR KUOTA ZONA DINAMIS CLOUD (Membaca data sub-object / Fallback default ke angka 3)
+  const topQuotaLimit = currentComp?.zones?.topQuota ?? 3;
+  const bottomQuotaLimit = currentComp?.zones?.bottomQuota ?? 3;
+
+  const isPodium = (idx) => idx < topQuotaLimit;
+  const isRelegation = (idx) => idx >= totalTeams - bottomQuotaLimit;
+
+  // 🔥 UPDATE CONFIGURE ZONE TO FIREBASE: Menyimpan mutasi pengaturan filter langsung ke Firestore induk
+  const handleUpdateZoneConfig = async (field, value) => {
+    try {
+      const compDocRef = doc(db, 'competitions', selectedCompId);
+      await updateDoc(compDocRef, {
+        [`zones.${field}`]: value
+      });
+    } catch (err) {
+      console.error("Gagal memperbarui konfigurasi zona: ", err);
+    }
+  };
 
   if (loadingLeagues) {
     return (
@@ -164,7 +182,10 @@ export default function StandingsTab() {
               <div className="relative w-full mt-0.5">
                 <select
                   value={selectedCompId}
-                  onChange={(e) => setSelectedCompId(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedCompId(e.target.value);
+                    setShowZoneDropdown(false);
+                  }}
                   className="w-full bg-transparent text-xs font-black text-white outline-none appearance-none pr-6 cursor-pointer tracking-wide uppercase"
                 >
                   {competitions.map((comp) => (
@@ -187,13 +208,11 @@ export default function StandingsTab() {
           </div>
           
           <div className="flex flex-col gap-2">
-            {/* Tampilkan Ringkasan Juara 1 */}
             <div className="bg-neon-volt/5 border border-neon-volt/20 p-2.5 rounded-xl flex items-center justify-between">
               <span className="text-[9px] font-black text-neon-volt tracking-wider uppercase">OFFICIAL CHAMPION (RANK 1)</span>
               <span className="text-xs font-black text-white uppercase">{teams[0]?.icon} {teams[0]?.name}</span>
             </div>
             
-            {/* Tampilkan Ringkasan Zona Merah Juru Kunci */}
             {totalTeams >= 4 && (
               <div className="bg-red-950/10 border border-red-900/20 p-2.5 rounded-xl flex items-center justify-between">
                 <span className="text-[9px] font-black text-red-400 tracking-wider uppercase">⚠️ RELEGATION JURU KUNCI</span>
@@ -205,9 +224,9 @@ export default function StandingsTab() {
       )}
 
       {/* MAIN DATA INTERACTIVE TABLE */}
-      <div className="bg-[#14141a] border border-gray-800 rounded-2xl overflow-hidden shadow-lg">
+      <div className="bg-[#14141a] border border-gray-800 rounded-2xl overflow-hidden shadow-lg relative">
         
-        {/* 🎛️ MODE SELECTOR TAB MIKRO (Standard vs Analytics Premium) */}
+        {/* 🎛️ MODE SELECTOR TAB MIKRO (Standard vs Analytics Premium vs Dynamic Zone Filter) */}
         <div className="flex justify-between items-center border-b border-gray-800/60 p-2 bg-black/20">
           <div className="flex gap-1.5">
             <button 
@@ -231,8 +250,53 @@ export default function StandingsTab() {
               <BarChart3 size={12} /> Advanced Stats
             </button>
           </div>
-          <span className="text-[9px] text-gray-500 font-black uppercase tracking-widest px-2">Top Scorers</span>
+          
+          {/* ⚙️ UPGRADE TAB KETIGA: Berubah Menjadi Tombol Dropdown Filter Zona Dinamis Operator */}
+          <button
+            onClick={() => setShowZoneDropdown(!showZoneDropdown)}
+            className={`px-3 py-1.5 rounded-lg text-[10px] uppercase font-black tracking-wider flex items-center gap-1.5 transition-all ${
+              showZoneDropdown 
+                ? 'bg-indigo-600 text-white border border-indigo-500' 
+                : 'bg-[#1b1b22] border border-gray-800 text-gray-400 hover:text-white'
+            }`}
+          >
+            <Settings2 size={11} /> Filter Zona
+          </button>
         </div>
+
+        {/* 🔮 PANEL INPUT MENU DROPDOWN ZONA DINAMIS OPERATOR */}
+        {showZoneDropdown && currentComp && (
+          <div className="bg-[#181822] border-b border-gray-800 p-3.5 grid grid-cols-2 gap-4 animate-slideDown z-20 relative">
+            <div className="flex flex-col gap-1">
+              <label className="text-[9px] font-black text-neon-purple uppercase tracking-widest flex items-center gap-1">
+                <Trophy size={10} /> Quota Lolos (Max 8)
+              </label>
+              <select
+                value={topQuotaLimit}
+                onChange={(e) => handleUpdateZoneConfig('topQuota', parseInt(e.target.value))}
+                className="w-full bg-black/50 border border-gray-800 rounded-lg p-2 text-xs text-white outline-none font-bold font-mono cursor-pointer focus:border-neon-purple"
+              >
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(num => (
+                  <option key={num} value={num} className="bg-[#181822]">{num} Tim Teratas</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[9px] font-black text-red-400 uppercase tracking-widest flex items-center gap-1">
+                ⚠️ Quota Relegation (Max 4)
+              </label>
+              <select
+                value={bottomQuotaLimit}
+                onChange={(e) => handleUpdateZoneConfig('bottomQuota', parseInt(e.target.value))}
+                className="w-full bg-black/50 border border-gray-800 rounded-lg p-2 text-xs text-white outline-none font-bold font-mono cursor-pointer focus:border-red-500"
+              >
+                {[1, 2, 3, 4].map(num => (
+                  <option key={num} value={num} className="bg-[#181822]">{num} Tim Terbawah</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
 
         {loadingTeams ? (
           <div className="flex items-center justify-center py-16 text-xs text-gray-500 gap-2">
@@ -280,10 +344,10 @@ export default function StandingsTab() {
 
                   return (
                     <tr key={team.id} className="hover:bg-white/[0.01] transition-colors duration-150">
-                      {/* 🎨 COLOR BOUNDARY DECORATOR PADA NOMOR URUT */}
+                      {/* 🎨 DYNAMIC BOUNDARY COLOR DECORATOR PADA DEPAN NOMOR URUT */}
                       <td className={`py-3.5 px-3 text-center text-xs font-black relative ${
-                        topZone ? 'text-neon-volt border-l-2 border-neon-volt' : 
-                        redZone ? 'text-red-500 border-l-2 border-red-500' : 'text-gray-500'
+                        topZone ? 'text-neon-purple border-l-2 border-neon-purple shadow-[inset_4px_0_10px_rgba(99,102,241,0.1)]' : 
+                        redZone ? 'text-red-500 border-l-2 border-red-500 shadow-[inset_4px_0_10px_rgba(239,68,68,0.1)]' : 'text-gray-500'
                       }`}>
                         {index + 1}
                       </td>
@@ -300,7 +364,7 @@ export default function StandingsTab() {
                           <td className="py-3.5 px-1.5 text-center text-xs text-gray-400">{team.stats?.draws ?? 0}</td>
                           <td className="py-3.5 px-1.5 text-center text-xs text-gray-400">{team.stats?.losses ?? 0}</td>
                           <td className="py-3.5 px-2 text-center text-xs font-semibold text-gray-400">{team.stats?.goalDifference ?? 0}</td>
-                          <td className={`py-3.5 px-3 text-center text-xs font-black bg-white/[0.01] ${topZone ? 'text-neon-volt' : redZone ? 'text-red-400' : 'text-white'}`}>{team.stats?.points ?? 0}</td>
+                          <td className={`py-3.5 px-3 text-center text-xs font-black bg-white/[0.01] ${topZone ? 'text-neon-purple' : redZone ? 'text-red-400' : 'text-white'}`}>{team.stats?.points ?? 0}</td>
                         </>
                       ) : (
                         <>
@@ -308,7 +372,7 @@ export default function StandingsTab() {
                           <td className="py-3.5 px-2 text-center text-xs text-red-400 font-medium">{team.analytics?.ga ?? 0}</td>
                           <td className="py-3.5 px-2 text-center text-xs font-semibold text-gray-400">{team.stats?.goalDifference ?? 0}</td>
                           
-                          {/* 🟢 TREN BULATAN FORM PERFORMA */}
+                          {/* TREN BULATAN FORM PERFORMA */}
                           <td className="py-3.5 px-4">
                             <div className="flex gap-1 justify-center items-center">
                               {team.analytics?.form && team.analytics.form.length > 0 ? (

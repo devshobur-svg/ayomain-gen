@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { db } from '@/firebaseConfig';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { Calendar, Users, X, ChevronDown, ListOrdered, BarChart3, RefreshCw, Trophy, Skull, AlertTriangle } from 'lucide-react';
 
-export default function PublicFixtures({ compId, currentMode }) {
+export default function PublicStandings({ compId, currentMode }) {
   // Data Storage States
   const [matchesByRound, setMatchesByRound] = useState({});
   const [standingsTeams, setStandingsTeams] = useState([]);
@@ -11,7 +11,8 @@ export default function PublicFixtures({ compId, currentMode }) {
   const [standingsSubMode, setStandingsSubMode] = useState('standard');
   const [loading, setLoading] = useState(true);
   
-  // State untuk melacak status akhir liga
+  // 🔽 STATES BARU: Menyimpan data spesifikasi induk liga & konfigurasi zonanya secara real-time
+  const [competitionData, setCompetitionData] = useState(null);
   const [isLeagueCompleted, setIsLeagueCompleted] = useState(false);
 
   // Lineup Drawer View States
@@ -23,6 +24,14 @@ export default function PublicFixtures({ compId, currentMode }) {
   useEffect(() => {
     if (!compId) return;
     setLoading(true);
+
+    // 🛰️ LISTEN DATA INDUK KOMPETISI: Menangkap mutasi format (Liga/Cup), jumlah tim, dan kuota zona dinamis
+    const compDocRef = doc(db, 'competitions', compId);
+    const unsubscribeComp = onSnapshot(compDocRef, (compSnap) => {
+      if (compSnap.exists()) {
+        setCompetitionData({ id: compSnap.id, ...compSnap.data() });
+      }
+    });
 
     const matchesRef = collection(db, 'competitions', compId, 'matches');
     const unsubscribeMatches = onSnapshot(matchesRef, (matchSnap) => {
@@ -109,7 +118,10 @@ export default function PublicFixtures({ compId, currentMode }) {
       });
     });
 
-    return () => unsubscribeMatches();
+    return () => {
+      unsubscribeComp();
+      unsubscribeMatches();
+    };
   }, [compId]);
 
   const handleOpenPublicLineup = (match) => {
@@ -129,10 +141,18 @@ export default function PublicFixtures({ compId, currentMode }) {
     });
   };
 
-  // Helper untuk menentukan batas baris klasemen dinamis
+  // 🧠 DETEKTOR KELOLOSAN ZONA DINAMIS PENONTON (Fallback otomatis ke angka 3 jika belum di-set admin)
+  const topQuotaLimit = competitionData?.zones?.topQuota ?? 3;
+  const bottomQuotaLimit = competitionData?.zones?.bottomQuota ?? 3;
+
   const totalTeams = standingsTeams.length;
-  const isPodium = (idx) => idx < 3;
-  const isRelegation = (idx) => totalTeams >= 5 ? idx >= totalTeams - 3 : idx === totalTeams - 1 && totalTeams > 1;
+  const isPodium = (idx) => idx < topQuotaLimit;
+  const isRelegation = (idx) => idx >= totalTeams - bottomQuotaLimit;
+
+  // 🧠 HITUNG SEKTOR PUTARAN LIGA (Untuk Keperluan Teks Home & Away)
+  const teamCountData = competitionData?.teamCount ?? 2;
+  const actualTeams = teamCountData % 2 !== 0 ? teamCountData + 1 : teamCountData;
+  const roundsPerLeg = actualTeams - 1;
 
   if (loading) {
     return (
@@ -147,7 +167,7 @@ export default function PublicFixtures({ compId, currentMode }) {
 
   return (
     <>
-      {/* 🟢 TAB 1: FIXTURES */}
+      {/* 🟢 TAB 1: FIXTURES PUBLIC */}
       {currentMode === 'fixtures' && (
         <div className="flex flex-col gap-3">
           {roundNumbers.length > 0 ? (
@@ -155,6 +175,15 @@ export default function PublicFixtures({ compId, currentMode }) {
               const key = `${compId}_${roundNum}`;
               const isExpanded = !!expandedRounds[key];
               const matches = matchesByRound[roundNum];
+
+              // 🧠 GENERATOR TEXT PEKAN HOME AWAY: Otomatis mendeteksi putaran liga di layar penonton
+              let roundDisplayLabel = `Pekan ${roundNum}`;
+              if (competitionData?.format === 'league') {
+                const currentLeg = roundNum > roundsPerLeg ? 2 : 1;
+                roundDisplayLabel = `Pekan ${roundNum} (Putaran ${currentLeg})`;
+              } else if (matches[0]?.stage) {
+                roundDisplayLabel = `Babak ${matches[0].stage.toUpperCase()}`;
+              }
 
               return (
                 <div key={roundNum} className="border border-gray-900 bg-black/20 rounded-xl overflow-hidden">
@@ -164,7 +193,7 @@ export default function PublicFixtures({ compId, currentMode }) {
                   >
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-neon-purple shadow-[0_0_6px_rgba(99,102,241,0.6)]" />
-                      <span className="text-xs font-black uppercase tracking-wider">Pekan {roundNum}</span>
+                      <span className="text-xs font-black uppercase tracking-wider">{roundDisplayLabel}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-[9px] text-gray-500 font-bold uppercase">{matches.length} Matches</span>
@@ -184,10 +213,18 @@ export default function PublicFixtures({ compId, currentMode }) {
 
                             <div className="flex flex-col items-center justify-center flex-1">
                               {match.status === 'live' || match.status === 'finished' ? (
-                                <div className="flex items-center gap-2 text-xs font-black text-white bg-black/40 px-2.5 py-1 rounded-xl border border-gray-800/60 shadow-inner">
-                                  <span className={match.status === 'live' ? 'text-neon-volt animate-pulse' : 'text-white'}>{match.homeScore}</span>
-                                  <span className="text-gray-600 font-normal">:</span>
-                                  <span className={match.status === 'live' ? 'text-neon-volt animate-pulse' : 'text-white'}>{match.awayScore}</span>
+                                <div className="flex flex-col items-center gap-1">
+                                  <div className="flex items-center gap-2 text-xs font-black text-white bg-black/40 px-2.5 py-1 rounded-xl border border-gray-800/60 shadow-inner">
+                                    <span className={match.status === 'live' ? 'text-neon-volt animate-pulse' : 'text-white'}>{match.homeScore}</span>
+                                    <span className="text-gray-600 font-normal">:</span>
+                                    <span className={match.status === 'live' ? 'text-neon-volt animate-pulse' : 'text-white'}>{match.awayScore}</span>
+                                  </div>
+                                  {/* Cetak Info Skor Penalti Publik jika laga Knockout berakhir imbang */}
+                                  {match.homePenaltyScore !== undefined && match.homePenaltyScore !== null && (
+                                    <span className="text-[8px] text-neon-volt font-bold uppercase tracking-widest mt-0.5 bg-neon-volt/5 border border-neon-volt/10 px-1 py-0.5 rounded">
+                                      Pen: ({match.homePenaltyScore} - {match.awayPenaltyScore})
+                                    </span>
+                                  )}
                                 </div>
                               ) : (
                                 <div className="flex items-center gap-1 bg-black/40 border border-gray-800/60 px-2 py-0.5 rounded-md text-[9px] text-gray-400 font-bold">
@@ -220,11 +257,11 @@ export default function PublicFixtures({ compId, currentMode }) {
         </div>
       )}
 
-      {/* 🟡 TAB 2: STANDINGS (LEAGUE TABLE) */}
+      {/* 🟡 TAB 2: STANDINGS PUBLIC (LEAGUE TABLE) */}
       {currentMode === 'standings' && (
         <div className="flex flex-col gap-4 animate-fadeIn">
           
-          {/* 🏆 INTERACTIVE CEREMONY WIDGET (ONLY APPEARS WHEN COMPLETED) */}
+          {/* 🏆 INTERACTIVE CEREMONY WIDGET (SINKRON DENGAN TOP QUOTA LIMIT BARU) */}
           {isLeagueCompleted && totalTeams > 0 && (
             <div className="bg-gradient-to-br from-[#1c1435] via-[#121216] to-[#1c0d0f] border-2 border-neon-purple/40 rounded-2xl p-4 shadow-[0_0_20px_rgba(139,92,246,0.15)] relative overflow-hidden">
               <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
@@ -235,18 +272,17 @@ export default function PublicFixtures({ compId, currentMode }) {
                 👑 FINAL TOURNAMENT REPORT 👑
               </h3>
 
-              {/* PODIUM JUARA (1, 2, 3) */}
+              {/* PODIUM FINALISTS BERDASARKAN KUOTA DINAMIS ADMIN */}
               <div className="flex flex-col gap-2 mb-4">
-                <span className="text-[8px] font-black tracking-wider text-gray-500 uppercase">🏆 PODIUM FINALISTS</span>
+                <span className="text-[8px] font-black tracking-wider text-gray-500 uppercase">🏆 TOP QUALIFIED TIM</span>
                 
-                {standingsTeams.slice(0, 3).map((team, rank) => (
+                {standingsTeams.slice(0, topQuotaLimit).map((team, rank) => (
                   <div key={team.id} className={`flex items-center justify-between p-2.5 rounded-xl border ${
-                    rank === 0 ? 'bg-neon-volt/10 border-neon-volt/40 shadow-[inner_0_0_10px_rgba(221,254,54,0.05)]' :
-                    rank === 1 ? 'bg-zinc-800/40 border-gray-600/40' : 'bg-[#1b1512] border-amber-700/30'
+                    rank === 0 ? 'bg-neon-volt/10 border-neon-volt/40 shadow-[inner_0_0_10px_rgba(221,254,54,0.05)]' : 'bg-zinc-800/40 border-gray-600/40'
                   }`}>
                     <div className="flex items-center gap-3">
                       <span className={`text-xs font-black w-5 h-5 rounded-md flex items-center justify-center ${
-                        rank === 0 ? 'bg-neon-volt text-black' : rank === 1 ? 'bg-gray-400 text-black' : 'bg-amber-700 text-white'
+                        rank === 0 ? 'bg-neon-volt text-black' : 'bg-gray-800 text-gray-400 border border-gray-700'
                       }`}>
                         {rank + 1}
                       </span>
@@ -260,17 +296,16 @@ export default function PublicFixtures({ compId, currentMode }) {
                 ))}
               </div>
 
-              {/* ZONA MERAH (BOTTOM 3 DEGRADASI) */}
-              {totalTeams >= 4 && (
+              {/* ZONA MERAH RELEGATION BERDASARKAN KONDISI DINAMIS KEDUA */}
+              {totalTeams > topQuotaLimit && (
                 <div className="border-t border-gray-800/80 pt-3">
                   <span className="text-[8px] font-black tracking-wider text-red-500 uppercase flex items-center gap-1 mb-2">
                     <Skull size={10} /> DANGER ZONA MERAH RELEGATION
                   </span>
                   <div className="grid grid-cols-1 gap-1.5">
-                    {standingsTeams.slice(-3).map((team, idx) => {
-                      // Ambil posisi aslinya di klasemen
-                      const originalRank = totalTeams - (2 - idx);
-                      if (originalRank <= 3) return null; // Proteksi agar tidak numpang tindih dengan podium
+                    {standingsTeams.slice(-bottomQuotaLimit).map((team, idx) => {
+                      const originalRank = totalTeams - (bottomQuotaLimit - 1 - idx);
+                      if (originalRank <= topQuotaLimit) return null; // Proteksi tumpang tindih
                       return (
                         <div key={team.id} className="flex items-center justify-between bg-red-950/20 border border-red-900/30 p-2 rounded-xl">
                           <div className="flex items-center gap-2.5">
@@ -278,7 +313,7 @@ export default function PublicFixtures({ compId, currentMode }) {
                             <span className="text-xs">{team.icon}</span>
                             <span className="text-xs font-bold text-gray-300 uppercase truncate max-w-[150px]">{team.name}</span>
                           </div>
-                          <span className="text-[9px] font-black text-red-400/80 uppercase tracking-widest">ZONA MERAH</span>
+                          <span className="text-[9px] font-black text-red-400/80 uppercase tracking-widest">DEGRADASI</span>
                         </div>
                       );
                     })}
@@ -291,8 +326,8 @@ export default function PublicFixtures({ compId, currentMode }) {
           {/* TABLE MATRIX */}
           <div className="bg-[#14141a] border border-gray-800 rounded-2xl overflow-hidden shadow-lg">
             <div className="flex border-b border-gray-800/60 p-2 bg-black/20 gap-1.5">
-              <button onClick={() => setStandingsSubMode('standard')} className={`px-3 py-1.5 rounded-lg text-[9px] uppercase font-black tracking-wider flex items-center gap-1 ${standingsSubMode === 'standard' ? 'bg-neon-purple/10 border border-neon-purple/20 text-neon-purple' : 'text-gray-500'}`}><ListOrdered size={11} /> Standard</button>
-              <button onClick={() => setStandingsSubMode('analytics')} className={`px-3 py-1.5 rounded-lg text-[9px] uppercase font-black tracking-wider flex items-center gap-1 ${standingsSubMode === 'analytics' ? 'bg-neon-volt/10 border border-neon-volt/20 text-neon-volt' : 'text-gray-500'}`}><BarChart3 size={11} /> Analytics</button>
+              <button onClick={() => setStandingsSubMode('standard')} className="px-3 py-1.5 rounded-lg text-[9px] uppercase font-black tracking-wider flex items-center gap-1 text-neon-purple bg-neon-purple/5 border border-neon-purple/10"><ListOrdered size={11} /> Standard</button>
+              <button onClick={() => setStandingsSubMode('analytics')} className="px-3 py-1.5 rounded-lg text-[9px] uppercase font-black tracking-wider flex items-center gap-1 text-neon-volt bg-neon-volt/5 border border-neon-volt/10"><BarChart3 size={11} /> Analytics</button>
             </div>
 
             <div className="w-full overflow-x-auto">
@@ -327,10 +362,10 @@ export default function PublicFixtures({ compId, currentMode }) {
 
                     return (
                       <tr key={team.id} className="hover:bg-white/[0.01]">
-                        {/* WARNA INDIKATOR VERTIKAL KIRI */}
+                        {/* 🎨 COLOR INDIKATOR VERTIKAL KIRI SINKRON SAMA CLOUD */}
                         <td className={`py-3 px-3 text-center text-xs font-black relative ${
-                          topZone ? 'text-neon-volt border-l-2 border-neon-volt' : 
-                          redZone ? 'text-red-500 border-l-2 border-red-500' : 'text-gray-500'
+                          topZone ? 'text-neon-purple border-l-2 border-neon-purple shadow-[inset_4px_0_10px_rgba(99,102,241,0.08)]' : 
+                          redZone ? 'text-red-500 border-l-2 border-red-500 shadow-[inset_4px_0_10px_rgba(239,68,68,0.08)]' : 'text-gray-500'
                         }`}>
                           {idx + 1}
                         </td>
@@ -345,7 +380,7 @@ export default function PublicFixtures({ compId, currentMode }) {
                             <td className="py-3 px-1 text-center text-xs text-gray-400">{team.stats?.draws ?? 0}</td>
                             <td className="py-3 px-1 text-center text-xs text-gray-400">{team.stats?.losses ?? 0}</td>
                             <td className="py-3 px-1.5 text-center text-xs text-gray-400">{team.stats?.goalDifference ?? 0}</td>
-                            <td className={`py-3 px-3 text-center text-xs font-black bg-white/5 ${topZone ? 'text-neon-volt' : redZone ? 'text-red-400' : 'text-white'}`}>{team.stats?.points ?? 0}</td>
+                            <td className={`py-3 px-3 text-center text-xs font-black bg-white/5 ${topZone ? 'text-neon-purple' : redZone ? 'text-red-400' : 'text-white'}`}>{team.stats?.points ?? 0}</td>
                           </>
                         ) : (
                           <>
